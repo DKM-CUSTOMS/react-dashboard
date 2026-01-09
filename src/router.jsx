@@ -7,6 +7,7 @@ import NotFound from './pages/NotFound';
 import CustomsDashboard from './pages/statistics/CustomsDashboard';
 import UserPerformanceDashboard from './pages/statistics/UserPerformanceDashboard';
 import UserCompareDashboard from './pages/statistics/UserCompareDashboard';
+import MultiUserCompareDashboard from './pages/statistics/MultiUserCompareDashboard';
 import UserComparisonSelector from './pages/statistics/UserComparisonSelector.jsx';
 import MonthlyReport from './pages/statistics/MonthlyReport';
 import Profile from './pages/profile/Profile';
@@ -52,6 +53,10 @@ const router = createBrowserRouter([
       {
         path: 'statistics/performance/compare/:user1/:user2',
         element: withAccess(<UserCompareDashboard />, ['admin', 'Team Leader']),
+      },
+      {
+        path: 'statistics/performance/compare-multi/:usernames',
+        element: withAccess(<MultiUserCompareDashboard />, ['admin', 'Team Leader']),
       },
       {
         path: 'statistics/monthly-report',

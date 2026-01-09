@@ -117,3 +117,100 @@ export async function addOutbound(inboundMrn, outboundData) {
     throw error;
   }
 }
+
+// Performance Cache Paths
+const PERFORMANCE_LOGIC_APP_URL = "https://prod-247.westeurope.logic.azure.com:443/workflows/70684bd0dcdf4af7862e22f5b532c61c/triggers/When_an_HTTP_request_is_received/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2FWhen_an_HTTP_request_is_received%2Frun&sv=1.0&sig=aO7GvuqCc4KAA-s5I_dqSsk9jVqfcaND0kLMS-dF5IM";
+const SUMMARY_BLOB_PATH = "Dashboard/cache/users_summaryV2.json";
+const USER_CACHE_PATH_PREFIX = "Dashboard/cache/usersV2/";
+const MONTHLY_SUMMARY_BLOB_PATH = "Dashboard/cache/monthly_report_cacheV2.json";
+
+/**
+ * Fetches the main performance summary (fast cache via Logic App)
+ */
+export async function getPerformanceSummary() {
+  const payload = {
+    container: CONTAINER_NAME,
+    filepath: SUMMARY_BLOB_PATH
+  };
+
+  try {
+    const response = await fetch(PERFORMANCE_LOGIC_APP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch performance summary: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching performance summary:", error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches monthly performance report (fast cache via Logic App)
+ */
+export async function getMonthlyPerformance() {
+  const payload = {
+    container: CONTAINER_NAME,
+    filepath: MONTHLY_SUMMARY_BLOB_PATH
+  };
+
+  try {
+    const response = await fetch(PERFORMANCE_LOGIC_APP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        // Fallback or throw? Let's just throw for now as monthly report might be critical
+        // OR fallback if you prefer, consistent with user performance?
+        // Let's stick to throwing main error to match getPerformanceSummary behavior for now unless requested
+      throw new Error(`Failed to fetch monthly report: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching monthly report:", error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches specific user performance data (fast cache via Logic App)
+ * Falls back to legacy API if cache is missing
+ */
+export async function getUserPerformance(username) {
+  // 1. Try Fast Cache (Logic App)
+  const filename = `${username}.json`;
+  const payload = {
+    container: CONTAINER_NAME,
+    filepath: USER_CACHE_PATH_PREFIX + filename
+  };
+
+  try {
+    const response = await fetch(PERFORMANCE_LOGIC_APP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+        return await response.json();
+    }
+    console.warn(`Cache miss for ${username}, falling back to legacy API.`);
+  } catch (error) {
+    console.warn(`Error fetching cache for ${username}, falling back to legacy API:`, error);
+  }
+
+  // 2. Fallback to Legacy API
+  const legacyUrl = `${import.meta.env.VITE_API_BASE_URL}/api/performance?user=${username}&code=${import.meta.env.VITE_API_CODE}`;
+  const res = await fetch(legacyUrl);
+  if (!res.ok) throw new Error("API Error");
+  return await res.json();
+}

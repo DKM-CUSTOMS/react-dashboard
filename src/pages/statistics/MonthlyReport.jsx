@@ -1,22 +1,15 @@
 // src/pages/statistics/MonthlyReport.jsx
+import { getMonthlyPerformance } from '../../api/api';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart, TrendingUp, Zap, User, ArrowUpDown, Loader, AlertTriangle, FileUp, FileDown, RefreshCw } from 'lucide-react';
-
-// --- User Lists for Team Classification ---
-const IMPORT_USERS = [
-    'FADWA.ERRAZIKI', 'AYOUB.SOURISTE', 'AYMANE.BERRIOUA', 'SANA.IDRISSI', 'AMINA.SAISS',
-    'KHADIJA.OUFKIR', 'ZOHRA.HMOUDOU', 'SIMO.ONSI', 'YOUSSEF.ASSABIR', 'ABOULHASSAN.AMINA',
-    'MEHDI.OUAZIR', 'OUMAIMA.EL.OUTMANI', 'HAMZA.ALLALI', 'MUSTAPHA.BOUJALA', 'HIND.EZZAOUI'
-];
-
-const EXPORT_USERS = [
-    'IKRAM.OULHIANE', 'MOURAD.ELBAHAZ', 'MOHSINE.SABIL', 'AYA.HANNI',
-    'ZAHIRA.OUHADDA', 'CHAIMAAE.EJJARI', 'HAFIDA.BOOHADDOU', 'KHADIJA.HICHAMI', 'FATIMA.ZAHRA.BOUGSIM'
-];
+import {
+  BarChart3, TrendingUp, Zap, User, ArrowUpDown, Loader,
+  AlertTriangle, FileUp, FileDown, RefreshCw, Calendar,
+  Filter, Download, ChevronRight
+} from 'lucide-react';
 
 // --- Caching Helpers ---
-const CACHE_KEY = "monthly-report-cache";
+const CACHE_KEY = "monthly-report-cache-v2"; // Changed to invalidate old cache
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 const readCache = () => {
@@ -40,63 +33,32 @@ const writeCache = (payload) => {
 
 
 // --- Helper Components ---
-const StatCard = ({ title, value, icon, subtext }) => (
-  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-4">
-        <div className="bg-gray-100 p-3 rounded-lg">{icon}</div>
+const StatCard = ({ label, value, sub, icon: Icon, colorTheme }) => {
+  const themes = {
+    gray: "bg-gray-50 border-gray-100 text-gray-900",
+    green: "bg-emerald-50 border-emerald-100 text-emerald-700",
+    blue: "bg-blue-50 border-blue-100 text-blue-700",
+    indigo: "bg-indigo-50 border-indigo-100 text-indigo-700",
+    purple: "bg-purple-50 border-purple-100 text-purple-700",
+    orange: "bg-orange-50 border-orange-100 text-orange-700",
+  };
+  const currentTheme = themes[colorTheme] || themes.gray;
+
+  return (
+    <div className={`p-4 rounded-sm border ${currentTheme} transition-all`}>
+      <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-2xl font-bold text-gray-800">{value}</p>
+          <p className="text-[10px] uppercase tracking-wider opacity-70 font-bold mb-1">{label}</p>
+          <h3 className="text-xl font-bold">{value}</h3>
+          <p className="text-[10px] opacity-70 mt-1">{sub}</p>
+        </div>
+        <div className="p-1.5 rounded-sm bg-white/50">
+          <Icon className="w-4 h-4 opacity-80" />
         </div>
       </div>
     </div>
-     {subtext && <p className="text-xs text-gray-500 mt-2">{subtext}</p>}
-  </div>
-);
-
-const PerformanceTable = ({ data, sortConfig, requestSort, onRowClick }) => (
-    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-            <table className="w-full">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">User</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider cursor-pointer" onClick={() => requestSort('manual_files')}>
-                            <div className="flex items-center">Manual Files <ArrowUpDown className="w-3 h-3 ml-1" /></div>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider cursor-pointer" onClick={() => requestSort('automatic_files')}>
-                            <div className="flex items-center">Automatic Files <ArrowUpDown className="w-3 h-3 ml-1" /></div>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider cursor-pointer" onClick={() => requestSort('total_files_created')}>
-                            <div className="flex items-center">Total Files <ArrowUpDown className="w-3 h-3 ml-1" /></div>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider cursor-pointer" onClick={() => requestSort('avg_files_per_active_day')}>
-                            <div className="flex items-center">Avg / Day <ArrowUpDown className="w-3 h-3 ml-1" /></div>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                    {data.map((row) => (
-                        <tr key={row.user} className="hover:bg-gray-50 cursor-pointer" onClick={() => onRowClick(row.user)}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                    <User className="w-4 h-4 text-gray-400 mr-3" />
-                                    <span className="font-medium text-text-primary">{row.user.replace(".", " ")}</span>
-                                </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap font-medium text-blue-600">{row.manual_files.toLocaleString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap font-medium text-green-600">{row.automatic_files.toLocaleString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap font-semibold text-lg text-text-primary">{row.total_files_created.toLocaleString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-text-muted">{row.avg_files_per_active_day}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </div>
-);
-
+  );
+};
 
 // --- Main Component ---
 const MonthlyReport = () => {
@@ -110,49 +72,62 @@ const MonthlyReport = () => {
 
   const fetchData = useCallback(async (force = false) => {
     if (force) {
-        setIsRefreshing(true);
+      setIsRefreshing(true);
     } else {
-        setLoading(true);
+      setLoading(true);
     }
     setError(null);
 
     // Try cache first unless forcing a refresh
     if (!force) {
-        const cached = readCache();
-        if (cached) {
-            setTeamData(cached);
-            setLoading(false);
-            return;
-        }
+      const cached = readCache();
+      if (cached) {
+        setTeamData(cached);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
-      const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/api/performance?all_users=true&code=${import.meta.env.VITE_API_CODE}`;
-      const response = await fetch(apiUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const result = await response.json();
+      const result = await getMonthlyPerformance();
 
       let allUsersData = [];
       if (typeof result === 'object' && !Array.isArray(result) && result !== null) {
-          allUsersData = Object.entries(result).map(([user, metrics]) => ({
-              user,
-              ...metrics
-          }));
+        allUsersData = Object.entries(result).map(([user, metrics]) => ({
+          user,
+          ...metrics
+        }));
       } else {
-          allUsersData = result;
+        allUsersData = result;
       }
-      
-      const importTeam = allUsersData.filter(u => IMPORT_USERS.includes(u.user));
-      const exportTeam = allUsersData.filter(u => EXPORT_USERS.includes(u.user));
-      
+
+      // Use the 'team' field from API instead of hardcoded lists
+      console.log('API Response:', result);
+      console.log('All Users Data:', allUsersData);
+
+      // Normalize field names to handle API variations
+      allUsersData = allUsersData.map(user => ({
+        ...user,
+        // Handle both old and new API field names
+        total_files_created: user.total_files_created ?? user.total_files_handled ?? 0,
+        avg_files_per_active_day: user.avg_files_per_active_day ?? user.avg_activity_per_day ?? 0,
+        manual_files: user.manual_files ?? 0,
+        automatic_files: user.automatic_files ?? 0,
+      }));
+
+      const importTeam = allUsersData.filter(u => u.team === 'import');
+      const exportTeam = allUsersData.filter(u => u.team === 'export');
+
+      console.log('Import Team:', importTeam);
+      console.log('Export Team:', exportTeam);
+
       const newTeamData = { import: importTeam, export: exportTeam };
       setTeamData(newTeamData);
       writeCache(newTeamData); // Write fresh data to cache
 
     } catch (err) {
       console.error("Failed to fetch monthly report:", err);
+      // If error, try to fallback to cache even if expired? No, strict for now.
       setError(err.message);
     } finally {
       setLoading(false);
@@ -196,13 +171,13 @@ const MonthlyReport = () => {
     const currentTeamData = teamData[activeTab];
     if (currentTeamData.length === 0) return { topManual: 'N/A', topAutomatic: 'N/A', totalFiles: 0 };
 
-    const topManual = currentTeamData.reduce((max, user) => user.manual_files > max.manual_files ? user : max, currentTeamData[0]);
-    const topAutomatic = currentTeamData.reduce((max, user) => user.automatic_files > max.automatic_files ? user : max, currentTeamData[0]);
-    const totalFiles = currentTeamData.reduce((sum, user) => sum + user.total_files_created, 0);
+    const topManual = currentTeamData.reduce((max, user) => (user.manual_files ?? 0) > (max.manual_files ?? 0) ? user : max, currentTeamData[0]);
+    const topAutomatic = currentTeamData.reduce((max, user) => (user.automatic_files ?? 0) > (max.automatic_files ?? 0) ? user : max, currentTeamData[0]);
+    const totalFiles = currentTeamData.reduce((sum, user) => sum + (user.total_files_created ?? 0), 0);
 
     return {
-      topManual: topManual.user.replace(".", " "),
-      topAutomatic: topAutomatic.user.replace(".", " "),
+      topManual: topManual?.user?.replace(".", " ") ?? 'N/A',
+      topAutomatic: topAutomatic?.user?.replace(".", " ") ?? 'N/A',
       totalFiles
     };
   }, [teamData, activeTab]);
@@ -210,89 +185,162 @@ const MonthlyReport = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-center">
-          <Loader className="h-12 w-12 animate-spin text-primary mx-auto" />
-          <p className="mt-4 text-lg text-gray-600">Loading Monthly Report...</p>
-        </div>
+        <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-red-50">
-        <div className="text-center p-8 bg-white rounded-lg shadow-md">
-          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto" />
-          <h2 className="mt-4 text-xl font-bold text-gray-800">Failed to Load Report</h2>
-          <p className="mt-2 text-gray-600">{error}</p>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="p-6 bg-white rounded-sm border border-gray-200 shadow-sm max-w-md text-center">
+          <AlertTriangle className="h-10 w-10 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Error Loading Report</h2>
+          <p className="text-sm text-gray-500 mb-4">{error}</p>
+          <button
+            onClick={() => fetchData(true)}
+            className="px-4 py-2 bg-blue-50 text-blue-600 rounded-sm font-medium text-sm hover:bg-blue-100 transition-colors"
+          >
+            Retry Connection
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 bg-background min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 flex justify-between items-center">
+    <div className="min-h-screen bg-gray-50 p-4 font-sans text-slate-800">
+      {/* Header */}
+      <div className="w-full bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden mb-4">
+        <div className="px-6 py-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-text-primary">Monthly Performance Report</h1>
-            <p className="text-text-muted mt-1">Team productivity over the last 30 days.</p>
+            <h1 className="text-lg font-bold text-gray-900 uppercase tracking-tight flex items-center gap-2">
+              Monthly Performance Report
+              <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-sm border border-gray-200 uppercase tracking-wide">30 Days</span>
+            </h1>
+            <p className="text-xs text-gray-500 mt-1">Team productivity analysis and leaderboard</p>
           </div>
           <button
             onClick={() => fetchData(true)}
             disabled={isRefreshing}
-            className="flex items-center px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:bg-gray-400"
+            className="flex items-center justify-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-sm text-xs font-bold uppercase tracking-wider hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Syncing...' : 'Refresh Data'}
           </button>
         </div>
 
-        {/* Team Tabs */}
-        <div className="mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-              <button
-                onClick={() => setActiveTab('import')}
-                className={`${
-                  activeTab === 'import'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-              >
-                <FileDown className="w-5 h-5 mr-2" />
-                Import Team ({teamData.import.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('export')}
-                className={`${
-                  activeTab === 'export'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-              >
-                <FileUp className="w-5 h-5 mr-2" />
-                Export Team ({teamData.export.length})
-              </button>
-            </nav>
+        {/* Tabs */}
+        <div className="px-6 flex items-center gap-6 border-t border-gray-100 bg-gray-50/50">
+          <button
+            onClick={() => setActiveTab('import')}
+            className={`py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'import' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <FileDown className="w-3.5 h-3.5" /> Import Team ({teamData.import.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('export')}
+            className={`py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'export' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <FileUp className="w-3.5 h-3.5" /> Export Team ({teamData.export.length})
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <StatCard
+          label="Total Files"
+          value={summaryStats.totalFiles.toLocaleString()}
+          sub="Files Processed in 30 Days"
+          icon={BarChart3}
+          colorTheme="blue"
+        />
+        <StatCard
+          label="Top Manual"
+          value={summaryStats.topManual}
+          sub="Highest Manual Output"
+          icon={TrendingUp}
+          colorTheme="purple"
+        />
+        <StatCard
+          label="Top Auto"
+          value={summaryStats.topAutomatic}
+          sub="Highest Automation Usage"
+          icon={Zap}
+          colorTheme="green"
+        />
+      </div>
+
+      {/* Performance Table */}
+      <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-2">
+            <User className="w-3.5 h-3.5" /> Team Leaderboard
+          </h3>
+          <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+            Sort by clicking columns
           </div>
         </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <StatCard title="Total Team Files" value={summaryStats.totalFiles.toLocaleString()} icon={<BarChart className="text-gray-500 w-6 h-6" />} />
-          <StatCard title="Top Manual Contributor" value={summaryStats.topManual} icon={<TrendingUp className="text-blue-500 w-6 h-6" />} subtext="Most manual files created" />
-          <StatCard title="Top Automatic Contributor" value={summaryStats.topAutomatic} icon={<Zap className="text-green-500 w-6 h-6" />} subtext="Most automatic files processed" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-y border-gray-100">
+              <tr>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors" onClick={() => requestSort('manual_files')}>
+                  <div className="flex items-center gap-1">Manual <ArrowUpDown className="w-3 h-3" /></div>
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => requestSort('automatic_files')}>
+                  <div className="flex items-center gap-1">Auto <ArrowUpDown className="w-3 h-3" /></div>
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 transition-colors" onClick={() => requestSort('total_files_created')}>
+                  <div className="flex items-center gap-1">Total <ArrowUpDown className="w-3 h-3" /></div>
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 transition-colors" onClick={() => requestSort('avg_files_per_active_day')}>
+                  <div className="flex items-center gap-1">Avg/Day <ArrowUpDown className="w-3 h-3" /></div>
+                </th>
+                <th className="w-10 px-6 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {sortedData.map((row, index) => (
+                <tr key={`${row.user}-${row.team}-${index}`} className="hover:bg-gray-50/80 transition-colors cursor-pointer group" onClick={() => handleRowClick(row.user)}>
+                  <td className="px-6 py-3">
+                    <span className="text-xs font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
+                      {row.user.replace(".", " ")}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                      {(row.manual_files ?? 0).toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                      {(row.automatic_files ?? 0).toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3 text-xs font-bold text-gray-900">
+                    {(row.total_files_created ?? 0).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-3 text-xs text-gray-500 font-mono">
+                    {row.avg_files_per_active_day ?? 0}
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-400" />
+                  </td>
+                </tr>
+              ))}
+              {sortedData.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-xs text-gray-400 italic">
+                    No data available for this team.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-
-        {/* Performance Table */}
-        <PerformanceTable 
-            data={sortedData} 
-            sortConfig={sortConfig} 
-            requestSort={requestSort} 
-            onRowClick={handleRowClick}
-        />
       </div>
     </div>
   );
