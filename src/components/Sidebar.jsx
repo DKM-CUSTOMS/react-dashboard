@@ -98,7 +98,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       label: 'Statistics',
       icon: BarChart3,
       path: '/statistics/performance',
-      allowedRoles: ['admin', 'manager'],
+      allowedRoles: ['admin', 'manager', 'Team Leader'],
       subtitles: [
         { label: 'Performance', path: '/statistics/performance' },
         { label: 'Compare', path: '/statistics/performance/compare' },

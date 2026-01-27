@@ -32,9 +32,8 @@ import TrackingModal from '../../components/TrackingModal';
 const StatusFilterOptions = [
   { value: 'all', label: 'All Statuses' },
   { value: 'complete', label: 'Complete', color: 'text-success' },
-  { value: 'error', label: 'Saldo Error', color: 'text-error' },
+  { value: 'error', label: 'Error', color: 'text-error' },
   { value: 'waiting', label: 'Waiting for Outbounds', color: 'text-blue-700' },
-  { value: 'needs_check', label: 'Needs Check', color: 'text-amber-600' },
   { value: 'unknown', label: 'Unknown', color: 'text-warning' },
 ];
 
@@ -66,7 +65,7 @@ const ArrivalsTable = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const rowsPerPage = 9;
+  const rowsPerPage = 8;
 
   // Track if this is the initial mount
   const isInitialMount = React.useRef(true);
@@ -113,26 +112,8 @@ const ArrivalsTable = () => {
   const getStatus = (arrival) => {
     const saldo = arrival.saldo;
     const outboundsCount = Array.isArray(arrival.Outbounds) ? arrival.Outbounds.length : 0;
-    const outbounds = arrival.Outbounds || [];
 
-    // ⚠️ HIGHEST PRIORITY: Check for Document Précédent format issues FIRST
-    // This ensures document format problems are always visible, even if arrival is otherwise complete
-    const hasDocPrecedentAlert = outbounds.some(outbound => {
-      const docPrecedent = outbound.document_precedent || '';
-      // Should start with "N821" - anything else (like "NCLE") needs verification
-      return docPrecedent.trim() && !docPrecedent.trim().startsWith('N821');
-    });
-
-    if (hasDocPrecedentAlert) {
-      return {
-        label: 'Needs Check',
-        value: 'needs_check',
-        color: 'warning',
-        icon: AlertCircle
-      };
-    }
-
-    // Priority after doc check: Complete > Saldo Error > Waiting
+    // Règles de statut :
     // - Saldo = 0 -> Complete
     if (saldo === 0) {
       return {
@@ -143,10 +124,10 @@ const ArrivalsTable = () => {
       };
     }
 
-    // - Saldo != 0 et Outbounds > 0 -> Saldo Error (includes over-declared when saldo < 0)
+    // - Saldo != 0 et Outbounds > 0 -> Error (includes over-declared when saldo < 0)
     if (saldo !== 0 && outboundsCount > 0) {
       return {
-        label: 'Saldo Error',
+        label: 'Error',
         value: 'error',
         color: 'error',
         icon: XCircle
@@ -291,7 +272,6 @@ const ArrivalsTable = () => {
     total: arrivals.length,
     complete: arrivals.filter(a => getStatus(a).value === 'complete').length,
     error: arrivals.filter(a => getStatus(a).value === 'error').length,
-    needsCheck: arrivals.filter(a => getStatus(a).value === 'needs_check').length,
     waiting: arrivals.filter(a => getStatus(a).value === 'waiting').length,
     criticalErrors: arrivals.filter(a => {
       const status = getStatus(a);
@@ -555,8 +535,11 @@ const ArrivalsTable = () => {
   // Rendu de l'état de chargement et d'erreur
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-center">
+          <RefreshCw className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-text-muted text-lg">Loading arrivals data...</p>
+        </div>
       </div>
     );
   }
@@ -580,67 +563,59 @@ const ArrivalsTable = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-[1800px] mx-auto">
 
         {/* Header and Controls */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-bold text-gray-900 mb-1">
+              <h1 className="text-3xl font-semibold text-text-primary mb-1">
                 Arrivals
               </h1>
-              <p className="text-xs text-gray-500">
+              <p className="text-text-muted">
                 Manage customs declarations and track shipment status
               </p>
             </div>
             <button
               onClick={handleRefresh}
               disabled={isFetching}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2 border border-border bg-surface hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
               {isFetching ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
 
           {/* Stats Bar */}
-          <div className="flex items-center gap-6 py-3 px-5 bg-white border border-gray-100 mb-3 rounded-sm shadow-sm">
+          {/* Stats Bar */}
+          <div className="flex items-center gap-8 py-4 px-6 bg-surface border border-border mb-6">
             <div
-              className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-sm transition-all ${statusFilter === 'all' ? 'bg-gray-100 ring-1 ring-gray-300 shadow-sm opacity-100' : 'opacity-50 hover:opacity-100 hover:bg-gray-50'}`}
+              className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'all' ? 'bg-gray-100 ring-1 ring-gray-300 shadow-sm opacity-100' : 'opacity-50 hover:opacity-100 hover:bg-gray-50'}`}
               onClick={() => setStatusFilter('all')}
               title="Show all arrivals"
             >
-              <Package className="w-5 h-5 text-gray-600" />
-              <span className="text-sm text-gray-600 font-medium">Total:</span>
-              <span className="font-bold text-sm text-gray-900">{stats.total}</span>
+              <Package className="w-5 h-5 text-text-muted" />
+              <span className="text-text-muted">Total:</span>
+              <span className="font-semibold text-text-primary">{stats.total}</span>
             </div>
             <div
-              className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-sm transition-all ${statusFilter === 'complete' ? 'bg-green-50 ring-1 ring-green-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
+              className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'complete' ? 'bg-green-50 ring-1 ring-green-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
               onClick={() => setStatusFilter('complete')}
               title="Shipments with Saldo = 0 (Completed)"
             >
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <span className="text-sm text-gray-600 font-medium">Complete:</span>
-              <span className="font-bold text-sm text-green-600">{stats.complete}</span>
+              <CheckCircle className="w-5 h-5 text-success" />
+              <span className="text-text-muted">Complete:</span>
+              <span className="font-semibold text-success">{stats.complete}</span>
             </div>
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'error' ? 'bg-red-50 ring-1 ring-red-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
               onClick={() => setStatusFilter('error')}
-              title="Shipments with Saldo discrepancies"
+              title="Shipments with Saldo discrepancies (started but incorrect)"
             >
-              <XCircle className="w-5 h-5 text-red-600" />
-              <span className="text-sm text-gray-600 font-medium">Saldo Error:</span>
-              <span className="font-bold text-sm text-red-600">{stats.error}</span>
-            </div>
-            <div
-              className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-sm transition-all ${statusFilter === 'needs_check' ? 'bg-amber-50 ring-1 ring-amber-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
-              onClick={() => setStatusFilter('needs_check')}
-              title="Document Précédent format needs verification (not starting with N821)"
-            >
-              <AlertCircle className="w-5 h-5 text-amber-600" />
-              <span className="text-sm text-gray-600 font-medium">Needs Check:</span>
-              <span className="font-bold text-sm text-amber-600">{stats.needsCheck}</span>
+              <XCircle className="w-5 h-5 text-error" />
+              <span className="text-text-muted">Error:</span>
+              <span className="font-semibold text-error">{stats.error}</span>
             </div>
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'waiting' ? 'bg-blue-50 ring-1 ring-blue-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
@@ -648,12 +623,12 @@ const ArrivalsTable = () => {
               title="Shipments released but not yet declared (Saldo > 0, No Outbounds)"
             >
               <Clock className="w-5 h-5 text-blue-700" />
-              <span className="text-sm text-gray-600 font-medium">Waiting:</span>
-              <span className="font-bold text-sm text-blue-700">{stats.waiting}</span>
+              <span className="text-text-muted">Waiting:</span>
+              <span className="font-semibold text-blue-700">{stats.waiting}</span>
             </div>
 
             {/* Critical Stats Separator */}
-            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+            <div className="w-px h-8 bg-border mx-2"></div>
 
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'critical' ? 'bg-red-50 ring-1 ring-red-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
@@ -661,8 +636,8 @@ const ArrivalsTable = () => {
               title="CRITICAL ERROR: Discrepancy persisting for more than 48 hours. Requires immediate fix."
             >
               <AlertCircle className={`w-5 h-5 text-red-600 ${stats.criticalErrors > 0 ? 'animate-pulse' : ''}`} />
-              <span className="text-sm text-gray-600 font-medium">Critical ({'>'}2d):</span>
-              <span className="font-bold text-sm text-red-600">{stats.criticalErrors}</span>
+              <span className="text-text-muted">Critical Errors ({'>'}2d):</span>
+              <span className="font-bold text-red-600">{stats.criticalErrors}</span>
             </div>
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'longWaiting' ? 'bg-orange-50 ring-1 ring-orange-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
@@ -670,13 +645,13 @@ const ArrivalsTable = () => {
               title="HIGH ALERT: Released more than 48 hours ago with NO action taken. Ghost shipment."
             >
               <Mail className={`w-5 h-5 text-orange-600 ${stats.longWaiting > 0 ? 'animate-pulse' : ''}`} />
-              <span className="text-sm text-gray-600 font-medium">High Alert ({'>'}2d):</span>
-              <span className="font-bold text-sm text-orange-600">{stats.longWaiting}</span>
+              <span className="text-text-muted">High Alert ({'>'}2d):</span>
+              <span className="font-bold text-orange-600">{stats.longWaiting}</span>
             </div>
 
             {isFetching && (
-              <div className="ml-auto flex items-center gap-1.5 text-xs text-gray-500">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <div className="ml-auto flex items-center gap-2 text-sm text-text-muted">
+                <RefreshCw className="w-4 h-4 animate-spin" />
                 Updating...
               </div>
             )}
@@ -686,13 +661,13 @@ const ArrivalsTable = () => {
           <div className="flex gap-4">
             {/* Search Bar */}
             <div className="relative flex-grow">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
               <input
                 type="text"
                 placeholder="Search by ID, MRN, or Commercial Reference..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-sm focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full pl-10 pr-4 py-2 bg-surface border border-border focus:outline-none focus:border-primary transition-colors"
                 autoComplete="off"
               />
             </div>
@@ -703,15 +678,15 @@ const ArrivalsTable = () => {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-sm focus:outline-none focus:border-blue-500 transition-colors text-xs text-gray-900 w-32 uppercase"
+                className="px-3 py-2 bg-surface border border-border focus:outline-none focus:border-primary transition-colors text-sm text-text-primary w-36 rounded-sm uppercase"
                 title="Start Date (Release)"
               />
-              <span className="text-xs text-gray-400">-</span>
+              <span className="text-text-muted">-</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-sm focus:outline-none focus:border-blue-500 transition-colors text-xs text-gray-900 w-32 uppercase"
+                className="px-3 py-2 bg-surface border border-border focus:outline-none focus:border-primary transition-colors text-sm text-text-primary w-36 rounded-sm uppercase"
                 title="End Date (Release)"
               />
               {(startDate || endDate) && (
@@ -720,21 +695,21 @@ const ArrivalsTable = () => {
                     setStartDate('');
                     setEndDate('');
                   }}
-                  className="p-1 hover:bg-gray-100 rounded-sm text-gray-400 transition-colors"
+                  className="p-1 hover:bg-gray-100 rounded text-text-muted transition-colors"
                   title="Clear date filter"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
 
             {/* Status Filter */}
             <div className="relative pointer-events-none">
-              <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="appearance-none w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-gray-200 rounded-sm focus:outline-none focus:border-blue-500 transition-colors cursor-pointer pointer-events-auto"
+                className="appearance-none w-full pl-10 pr-8 py-2 bg-surface border border-border focus:outline-none focus:border-primary transition-colors cursor-pointer pointer-events-auto"
               >
                 {StatusFilterOptions.map(option => (
                   <option
@@ -751,57 +726,57 @@ const ArrivalsTable = () => {
             {/* Export Button */}
             <button
               onClick={() => handleRequestExport('all')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white hover:bg-green-700 rounded-sm transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
               title="Export filtered list to Excel"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-4 h-4" />
               Export
             </button>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white border border-gray-100 rounded-sm overflow-hidden">
+        <div className="bg-surface border border-border">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-3 py-2 text-left w-10">
+              <tr className="border-b border-border bg-gray-50">
+                <th className="px-3 py-3 text-left w-12">
                   <input
                     type="checkbox"
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     onChange={handleSelectAll}
                     checked={paginatedArrivals.length > 0 && paginatedArrivals.every(a => selectedIds.includes(a.MRN))}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   ID
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   MRN
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Commercial Ref
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Packages
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Gross Mass (kg)
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Released Date
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Outbounds
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Saldo
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Actions
                 </th>
               </tr>

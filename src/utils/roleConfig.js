@@ -8,7 +8,8 @@ export const userRoleMap = {
   'andy.paepen@dkm-customs.com': ['manager'],
   'kristof.ghys@dkm-customs.com': ['manager'],
   'hans.cuypers@dkm-customs.com': ['manager'],
-  'fatimazahra.oubelkas@dkm-customs.com': ['Team Leader']
+  'fatimazahra.oubelkas@dkm-customs.com': ['Team Leader'],
+  'chaimae.ejjari@dkm-customs.com': ['Arrivals Agent']
 };
 
 // Roles automatically granted to any authenticated user.

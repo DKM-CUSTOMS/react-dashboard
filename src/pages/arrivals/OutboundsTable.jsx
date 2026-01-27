@@ -13,9 +13,11 @@ import {
   ArrowDown,
   Plus,
   X,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
-import { getMasterRecords, addOutbound } from '../../api/api';
+import { getMasterRecords, addOutbound, deleteOutbound } from '../../api/api';
+import { useAuth } from '../../context/AuthContext';
 
 const OutboundsTable = () => {
   const { mrn } = useParams();
@@ -34,6 +36,9 @@ const OutboundsTable = () => {
     date_acceptation: ''
   });
   const [formError, setFormError] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [outboundToDelete, setOutboundToDelete] = useState(null);
+  const { user, hasRole } = useAuth();
 
   // ✨ React Query - Uses cached data from ArrivalsTable (NO API CALL if cached!)
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -63,6 +68,19 @@ const OutboundsTable = () => {
     },
     onError: (error) => {
       setFormError(error.message || 'Failed to add outbound. Please try again.');
+    }
+  });
+
+  // Mutation for deleting outbound
+  const deleteOutboundMutation = useMutation({
+    mutationFn: ({ inboundMrn, outboundMrn }) => deleteOutbound(inboundMrn, outboundMrn),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['arrivals'] });
+      setShowDeleteModal(false);
+      setOutboundToDelete(null);
+    },
+    onError: (error) => {
+      alert(`Failed to delete outbound: ${error.message}`);
     }
   });
 
@@ -238,6 +256,87 @@ const OutboundsTable = () => {
     setFormError(null);
   };
 
+  // Permission check: Admin or Arrivals Agent can delete
+  const canDeleteOutbound = () => {
+    if (!user) return false;
+    return hasRole('admin') || hasRole('Arrivals Agent');
+  };
+
+  // Check if deletion should be prevented (saldo = 0 for non-admins)
+  const shouldPreventDeletion = (outbound) => {
+    if (!user) return true;
+    // Admins can delete even if saldo = 0
+    if (hasRole('admin')) return false;
+    // Non-admins cannot delete if saldo = 0 (complete)
+    return inboundData?.saldo === 0;
+  };
+
+  const handleDeleteClick = (outbound) => {
+    setOutboundToDelete(outbound);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!outboundToDelete) return;
+
+    deleteOutboundMutation.mutate({
+      inboundMrn: mrn,
+      outboundMrn: outboundToDelete.mrn
+    });
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+    setOutboundToDelete(null);
+  };
+
+  // Smart Suggestions: Detect issues and provide recommendations
+  const getSmartSuggestions = () => {
+    const suggestions = [];
+
+    // Only show suggestions for error cases (saldo < 0 = over-declared)
+    if (!inboundData || inboundData.saldo >= 0) return suggestions;
+
+    // Detectduplicate outbounds (same packages but different MRNs)
+    const packageGroups = {};
+    outbounds.forEach((outbound, index) => {
+      const packages = outbound.nombre_total_des_conditionnements;
+      if (!packageGroups[packages]) {
+        packageGroups[packages] = [];
+      }
+      packageGroups[packages].push({ ...outbound, index });
+    });
+
+    // Find duplicates (groups with more than 1 outbound)
+    Object.entries(packageGroups).forEach(([packages, group]) => {
+      if (group.length > 1) {
+        // Sort by date (oldest first)
+        const sorted = [...group].sort((a, b) => {
+          const dateA = a.date_acceptation ? new Date(a.date_acceptation.split('/').reverse().join('-')) : new Date(0);
+          const dateB = b.date_acceptation ? new Date(b.date_acceptation.split('/').reverse().join('-')) : new Date(0);
+          return dateA - dateB;
+        });
+
+        const oldest = sorted[0];
+        const newest = sorted[sorted.length - 1];
+
+        suggestions.push({
+          type: 'duplicate',
+          severity: 'high',
+          title: '🔍 Duplicate Detection',
+          message: `Found ${group.length} outbounds with ${packages} packages. This suggests a replacement declaration.`,
+          recommendation: `Delete the older outbound (${oldest.mrn}) - Customs likely sent a replacement due to verification.`,
+          outboundToDelete: oldest,
+          reason: 'Customs sends replacement declarations when there are suspicions or control requirements.'
+        });
+      }
+    });
+
+    return suggestions;
+  };
+
+  const suggestions = getSmartSuggestions();
+
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEscape = (e) => {
@@ -251,11 +350,8 @@ const OutboundsTable = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
-        <div className="text-center">
-          <RefreshCw className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
-          <p className="text-text-muted text-lg">Loading outbound records...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
       </div>
     );
   }
@@ -451,6 +547,39 @@ const OutboundsTable = () => {
             )}
           </div>
         </div>
+
+        {/* Smart Suggestions Section - Only for Error Cases */}
+        {suggestions.length > 0 && (
+          <div className="mb-6 space-y-3">
+            {suggestions.map((suggestion, idx) => (
+              <div key={idx} className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-sm shadow-sm">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-grow">
+                    <h4 className="font-bold text-amber-900 mb-1">{suggestion.title}</h4>
+                    <p className="text-sm text-amber-800 mb-2">{suggestion.message}</p>
+
+                    <div className="bg-white p-3 rounded-sm border border-amber-200 mb-2">
+                      <p className="text-xs font-semibold text-gray-700 mb-1">💡 Recommendation:</p>
+                      <p className="text-xs text-gray-800">{suggestion.recommendation}</p>
+                      <p className="text-xs text-gray-600 mt-1 italic">{suggestion.reason}</p>
+                    </div>
+
+                    {canDeleteOutbound() && !shouldPreventDeletion(suggestion.outboundToDelete) && (
+                      <button
+                        onClick={() => handleDeleteClick(suggestion.outboundToDelete)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-red-600 text-white hover:bg-red-700 rounded-sm transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete {suggestion.outboundToDelete.mrn.substring(0, 15)}...
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Add Outbound Modal */}
         {showAddForm && (
@@ -779,6 +908,11 @@ const OutboundsTable = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Document d'accompagnement
                 </th>
+                {canDeleteOutbound() && (
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -843,15 +977,152 @@ const OutboundsTable = () => {
                     <td className="px-6 py-4 text-sm text-text-primary">
                       {outbound.document_d_accompagnement || 'N/A'}
                     </td>
+                    {canDeleteOutbound() && (
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => handleDeleteClick(outbound)}
+                          disabled={shouldPreventDeletion(outbound) || deleteOutboundMutation.isPending}
+                          className={`p-2 rounded-sm transition-colors ${shouldPreventDeletion(outbound)
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'hover:bg-red-50 text-red-600 hover:text-red-700'
+                            } ${deleteOutboundMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={shouldPreventDeletion(outbound)
+                            ? 'Cannot delete: Arrival is complete (saldo = 0). Only admins can delete from complete arrivals.'
+                            : 'Delete outbound'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && outboundToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+            <div
+              className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+                <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  Delete Outbound Record?
+                </h3>
+                <button
+                  onClick={handleCancelDelete}
+                  disabled={deleteOutboundMutation.isPending}
+                  className="text-red-700 hover:text-red-900 transition-colors disabled:opacity-50"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Outbound Details */}
+                <div className="bg-gray-50 p-4 rounded-sm border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Record to Delete:</h4>
+                  <div className="space-y-1 text-sm">
+                    <p><span className="font-medium">MRN:</span> {outboundToDelete.mrn}</p>
+                    <p><span className="font-medium">Packages:</span> {formatNumber(outboundToDelete.nombre_total_des_conditionnements)}</p>
+                    {outboundToDelete.numero_de_reference && (
+                      <p><span className="font-medium">Reference:</span> {outboundToDelete.numero_de_reference}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Saldo Impact Preview */}
+                <div className="bg-blue-50 p-4 rounded-sm border border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                    <ArrowDown className="w-4 h-4" />
+                    Impact Preview:
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-blue-700">Current Saldo:</span>
+                      <span className={`font-bold ${inboundData?.saldo === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatNumber(inboundData?.saldo || 0)}
+                        {inboundData?.saldo === 0 && ' (Complete)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-blue-700">After Deletion:</span>
+                      <span className={`font-bold ${((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) === 0
+                        ? 'text-green-600'
+                        : ((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) > 0
+                          ? 'text-orange-600'
+                          : 'text-red-600'
+                        }`}>
+                        {formatNumber((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0))}
+                        {((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) === 0
+                          ? ' ✅ (Complete!)'
+                          : ((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) > 0
+                            ? ' (Incomplete)'
+                            : ' (Over-declared)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Warning for Complete Arrivals */}
+                {inboundData?.saldo === 0 && (
+                  <div className="bg-amber-50 p-4 rounded-sm border border-amber-300">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm text-amber-800">
+                        <p className="font-semibold mb-1">⚠️ Admin Override</p>
+                        <p>This arrival is currently <strong>Complete</strong>. Deleting this outbound will make it <strong>Incomplete</strong> again.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Final Warning */}
+                <div className="bg-red-50 p-3 rounded-sm border border-red-200">
+                  <p className="text-sm text-red-800 font-medium text-center">
+                    ⚠️ This action cannot be undone!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+                <button
+                  onClick={handleCancelDelete}
+                  disabled={deleteOutboundMutation.isPending}
+                  className="px-4 py-2 text-sm font-medium border border-gray-300 bg-white hover:bg-gray-50 rounded-sm transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={deleteOutboundMutation.isPending}
+                  className="px-4 py-2 text-sm font-medium bg-red-600 text-white hover:bg-red-700 rounded-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {deleteOutboundMutation.isPending ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete Outbound
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default OutboundsTable;
+
+

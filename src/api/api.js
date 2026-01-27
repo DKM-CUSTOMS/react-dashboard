@@ -118,6 +118,44 @@ export async function addOutbound(inboundMrn, outboundData) {
   }
 }
 
+/**
+ * Deletes an outbound record and recalculates saldo
+ * @param {string} inboundMrn - The parent MRN
+ * @param {string} outboundMrn - The child outbound MRN to delete
+ */
+export async function deleteOutbound(inboundMrn, outboundMrn) {
+  const API_URL = "https://functionapp-python-uploads-huaafaf5f0cxc8g4.westeurope-01.azurewebsites.net/api/DgMRNExtractor";
+  const API_KEY = import.meta.env.VITE_API_V2_KEY;
+  
+  const payload = {
+    route: "delete_outbound",
+    inbound_mrn: inboundMrn,
+    outbound_mrn: outboundMrn
+  };
+
+  try {
+    const response = await fetch(`${API_URL}?code=${API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to delete outbound: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data;
+    
+  } catch (error) {
+    console.error('Error deleting outbound:', error);
+    throw error;
+  }
+}
+
 // Performance Cache Paths
 const PERFORMANCE_LOGIC_APP_URL = "https://prod-247.westeurope.logic.azure.com:443/workflows/70684bd0dcdf4af7862e22f5b532c61c/triggers/When_an_HTTP_request_is_received/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2FWhen_an_HTTP_request_is_received%2Frun&sv=1.0&sig=aO7GvuqCc4KAA-s5I_dqSsk9jVqfcaND0kLMS-dF5IM";
 const SUMMARY_BLOB_PATH = "Dashboard/cache/users_summaryV2.json";
