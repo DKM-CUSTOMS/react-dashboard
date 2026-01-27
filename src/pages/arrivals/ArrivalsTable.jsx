@@ -91,7 +91,7 @@ const ArrivalsTable = () => {
   const arrivals = data?.records || [];
 
 
-  // Helper to find latest check for an MRN
+  // Helper to find latest check or approval for an MRN
   const getLatestTrackingInfo = (mrn) => {
     if (!trackingData || !Array.isArray(trackingData)) return null;
 
@@ -101,12 +101,23 @@ const ArrivalsTable = () => {
 
     if (!record || !record.tracking_records || record.tracking_records.length === 0) return null;
 
-    // Find the latest 'checked' action
-    const checkedRecords = record.tracking_records.filter(r => r.action === 'checked');
-    if (checkedRecords.length === 0) return null;
+    // Find the latest 'checked' or 'approved' action
+    const relevantRecords = record.tracking_records.filter(r => r.action === 'checked' || r.action === 'approved');
+    if (relevantRecords.length === 0) return null;
 
     // Sort by timestamp desc
-    return checkedRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    return relevantRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+  };
+
+  // Helper to check if an MRN is manually approved
+  const isManuallyApproved = (mrn) => {
+    if (!trackingData || !Array.isArray(trackingData)) return false;
+    const normalizedMrn = String(mrn).trim().toUpperCase();
+    const record = trackingData.find(r => String(r.MRN).trim().toUpperCase() === normalizedMrn);
+    if (!record || !record.tracking_records) return false;
+
+    // Check if any record has action 'approved'
+    return record.tracking_records.some(r => r.action === 'approved');
   };
 
   // Fonction pour déterminer le statut en fonction du saldo et du nombre d'outbounds
@@ -123,7 +134,10 @@ const ArrivalsTable = () => {
       return docPrecedent.trim() && !docPrecedent.trim().startsWith('N821');
     });
 
-    if (hasDocPrecedentAlert) {
+    const manuallyApproved = isManuallyApproved(arrival.MRN);
+
+    // Only return "Needs Check" if there's an alert AND it hasn't been approved yet
+    if (hasDocPrecedentAlert && !manuallyApproved) {
       return {
         label: 'Needs Check',
         value: 'needs_check',
@@ -132,11 +146,11 @@ const ArrivalsTable = () => {
       };
     }
 
-    // Priority after doc check: Complete > Saldo Error > Waiting
+    // Now proceed with standard logic. If it was approved, it will flow into "Complete" if saldo is 0.
     // - Saldo = 0 -> Complete
     if (saldo === 0) {
       return {
-        label: 'Complete',
+        label: manuallyApproved ? 'Complete (Approved)' : 'Complete',
         value: 'complete',
         color: 'success',
         icon: CheckCircle

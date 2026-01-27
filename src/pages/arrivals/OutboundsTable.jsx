@@ -17,7 +17,9 @@ import {
   Trash2
 } from 'lucide-react';
 import { getMasterRecords, addOutbound, deleteOutbound } from '../../api/api';
+import { getTrackingRecords, addTrackingRecord } from '../../api/trackingApi';
 import { useAuth } from '../../context/AuthContext';
+import PremiumConfirmationModal from '../../components/PremiumConfirmationModal';
 
 const OutboundsTable = () => {
   const { mrn } = useParams();
@@ -38,6 +40,8 @@ const OutboundsTable = () => {
   const [formError, setFormError] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [outboundToDelete, setOutboundToDelete] = useState(null);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [isSuccessState, setIsSuccessState] = useState(false);
   const { user, hasRole } = useAuth();
 
   // ✨ React Query - Uses cached data from ArrivalsTable (NO API CALL if cached!)
@@ -46,6 +50,41 @@ const OutboundsTable = () => {
     queryFn: getMasterRecords,
     staleTime: 5 * 60 * 1000,
     cacheTime: 10 * 60 * 1000,
+  });
+
+  // Fetch tracking data for this MRN
+  const { data: trackingRecords = [], refetch: refetchTracking } = useQuery({
+    queryKey: ['tracking', mrn],
+    queryFn: () => getTrackingRecords(mrn),
+    staleTime: 30 * 1000,
+  });
+
+  // Mutation for approving "Needs Check"
+  const approveMutation = useMutation({
+    mutationFn: (note) => addTrackingRecord(mrn, {
+      user: user?.name || 'Unknown User',
+      action: 'approved',
+      note: note || 'Manually approved by user',
+      status: 'complete',
+      timestamp: new Date().toISOString()
+    }),
+    onSuccess: async () => {
+      setIsSuccessState(true);
+
+      // Force immediate invalidation and refetch
+      await queryClient.invalidateQueries({ queryKey: ['tracking', mrn] });
+      await queryClient.invalidateQueries({ queryKey: ['arrivals'] });
+      await queryClient.invalidateQueries({ queryKey: ['all_tracking'] });
+
+      // Delay redirection to let user see the premium success state
+      setTimeout(() => {
+        navigate('/arrivals', { replace: true });
+      }, 1500);
+    },
+    onError: (error) => {
+      alert(`Failed to approve: ${error.message}`);
+      setShowApproveModal(false);
+    }
   });
 
   // Mutation for adding outbound
@@ -374,6 +413,22 @@ const OutboundsTable = () => {
     );
   }
 
+  // Calculate if "Needs Check" is active
+  const hasDocPrecedentAlert = outbounds.some(outbound => {
+    const docPrecedent = outbound.document_precedent || '';
+    return docPrecedent.trim() && !docPrecedent.trim().startsWith('N821');
+  });
+
+  const isApproved = trackingRecords.some(r => r.action === 'approved');
+
+  const handleApprove = () => {
+    setShowApproveModal(true);
+  };
+
+  const confirmApprove = () => {
+    approveMutation.mutate("Verified document format manually");
+  };
+
   if (!inboundData) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
@@ -496,7 +551,7 @@ const OutboundsTable = () => {
                 {inboundData?.saldo !== undefined ? formatNumber(inboundData.saldo) : 'N/A'}
               </p>
             </div>
-            {saldoStatus && (
+            {saldoStatus && !isApproved && (
               <div>
                 <p className="text-xs text-text-muted uppercase mb-1">Status</p>
                 <div className={`inline-flex items-center gap-1.5 px-2 py-1 border text-xs font-medium ${saldoStatus.color === 'success'
@@ -506,6 +561,29 @@ const OutboundsTable = () => {
                   <saldoStatus.icon className="w-3.5 h-3.5" />
                   {saldoStatus.label}
                 </div>
+              </div>
+            )}
+            {isApproved && inboundData.saldo === 0 && (
+              <div>
+                <p className="text-xs text-text-muted uppercase mb-1">Status</p>
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 border border-success text-success bg-green-50 text-xs font-medium">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Complete (Approved)
+                </div>
+              </div>
+            )}
+            {hasDocPrecedentAlert && !isApproved && inboundData.saldo === 0 && (
+              <div>
+                <p className="text-xs text-text-muted uppercase mb-1">Action Required</p>
+                <button
+                  onClick={handleApprove}
+                  disabled={approveMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors shadow-sm"
+                  title="Mark as complete despite document format alerts"
+                >
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  {approveMutation.isPending ? 'Approving...' : 'Approve as Complete'}
+                </button>
               </div>
             )}
           </div>
@@ -1004,120 +1082,84 @@ const OutboundsTable = () => {
         {/* Delete Confirmation Modal */}
         {showDeleteModal && outboundToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-            <div
-              className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-lg"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+            <div className="bg-white border border-gray-200 shadow-xl w-full max-w-lg rounded-lg overflow-hidden">
+              <div className="bg-red-50 border-b border-red-100 px-6 py-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
-                  Delete Outbound Record?
+                  <Trash2 className="w-5 h-5" />
+                  Confirm Deletion
                 </h3>
                 <button
                   onClick={handleCancelDelete}
-                  disabled={deleteOutboundMutation.isPending}
-                  className="text-red-700 hover:text-red-900 transition-colors disabled:opacity-50"
+                  className="text-red-400 hover:text-red-600 transition-colors"
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
 
               <div className="p-6 space-y-4">
-                {/* Outbound Details */}
-                <div className="bg-gray-50 p-4 rounded-sm border border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Record to Delete:</h4>
-                  <div className="space-y-1 text-sm">
-                    <p><span className="font-medium">MRN:</span> {outboundToDelete.mrn}</p>
-                    <p><span className="font-medium">Packages:</span> {formatNumber(outboundToDelete.nombre_total_des_conditionnements)}</p>
-                    {outboundToDelete.numero_de_reference && (
-                      <p><span className="font-medium">Reference:</span> {outboundToDelete.numero_de_reference}</p>
-                    )}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 text-sm">
+                  <p className="font-semibold text-gray-700 mb-2">Record details:</p>
+                  <p><span className="text-gray-500">MRN:</span> {outboundToDelete.mrn}</p>
+                  <p><span className="text-gray-500">Packages:</span> {formatNumber(outboundToDelete.nombre_total_des_conditionnements)}</p>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm">
+                  <p className="font-bold text-blue-900 mb-2">Saldo Impact:</p>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-blue-700">Current:</span>
+                    <span className="font-mono font-bold">{formatNumber(inboundData?.saldo || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">New:</span>
+                    <span className="font-mono font-bold text-blue-900">
+                      {formatNumber((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0))}
+                    </span>
                   </div>
                 </div>
 
-                {/* Saldo Impact Preview */}
-                <div className="bg-blue-50 p-4 rounded-sm border border-blue-200">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                    <ArrowDown className="w-4 h-4" />
-                    Impact Preview:
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-blue-700">Current Saldo:</span>
-                      <span className={`font-bold ${inboundData?.saldo === 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatNumber(inboundData?.saldo || 0)}
-                        {inboundData?.saldo === 0 && ' (Complete)'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-blue-700">After Deletion:</span>
-                      <span className={`font-bold ${((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) === 0
-                        ? 'text-green-600'
-                        : ((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) > 0
-                          ? 'text-orange-600'
-                          : 'text-red-600'
-                        }`}>
-                        {formatNumber((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0))}
-                        {((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) === 0
-                          ? ' ✅ (Complete!)'
-                          : ((inboundData?.saldo || 0) + parseInt(outboundToDelete.nombre_total_des_conditionnements || 0)) > 0
-                            ? ' (Incomplete)'
-                            : ' (Over-declared)'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Warning for Complete Arrivals */}
-                {inboundData?.saldo === 0 && (
-                  <div className="bg-amber-50 p-4 rounded-sm border border-amber-300">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm text-amber-800">
-                        <p className="font-semibold mb-1">⚠️ Admin Override</p>
-                        <p>This arrival is currently <strong>Complete</strong>. Deleting this outbound will make it <strong>Incomplete</strong> again.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Final Warning */}
-                <div className="bg-red-50 p-3 rounded-sm border border-red-200">
-                  <p className="text-sm text-red-800 font-medium text-center">
-                    ⚠️ This action cannot be undone!
-                  </p>
-                </div>
+                <p className="text-xs text-red-600 font-medium text-center italic">
+                  * This action cannot be reversed.
+                </p>
               </div>
 
-              <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+              <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100">
                 <button
                   onClick={handleCancelDelete}
-                  disabled={deleteOutboundMutation.isPending}
-                  className="px-4 py-2 text-sm font-medium border border-gray-300 bg-white hover:bg-gray-50 rounded-sm transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmDelete}
                   disabled={deleteOutboundMutation.isPending}
-                  className="px-4 py-2 text-sm font-medium bg-red-600 text-white hover:bg-red-700 rounded-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-all shadow-lg shadow-red-100 flex items-center gap-2"
                 >
                   {deleteOutboundMutation.isPending ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Deleting...
-                    </>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <Trash2 className="w-4 h-4" />
-                      Delete Outbound
-                    </>
+                    <Trash2 className="w-4 h-4" />
                   )}
+                  {deleteOutboundMutation.isPending ? 'Deleting...' : 'Delete Permanently'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* Premium Approval Modal */}
+        <PremiumConfirmationModal
+          isOpen={showApproveModal}
+          onClose={() => setShowApproveModal(false)}
+          onConfirm={confirmApprove}
+          title="Manual Verification"
+          message={`Confirm manual authorization for MRN ${mrn}. This action validates the document sequence and updates the system status to authorized/complete.`}
+          confirmText="Authorize Release"
+          cancelText="Abort"
+          type="info"
+          isLoading={approveMutation.isPending}
+          isSuccess={isSuccessState}
+          successMessage="File approved! Returning to Arrivals..."
+        />
       </div>
     </div>
   );
