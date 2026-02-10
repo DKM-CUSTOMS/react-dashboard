@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 import ExportModal from '../../components/ExportModal';
+import PremiumConfirmationModal from '../../components/PremiumConfirmationModal';
 import { getMasterRecords } from '../../api/api';
 import { calculateDaysSinceRelease, getAllTrackingRecords, addBulkTrackingRecords } from '../../api/trackingApi';
 import { useAuth } from '../../context/AuthContext';
@@ -58,6 +59,11 @@ const ArrivalsTable = () => {
   const [bulkNote, setBulkNote] = useState('');
   const [exportModal, setExportModal] = useState({ isOpen: false, scope: 'all' });
   const [isExporting, setIsExporting] = useState(false);
+
+  // Bulk Approval Modal State
+  const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
+  const [isBulkSuccess, setIsBulkSuccess] = useState(false);
+  const [bulkActionCount, setBulkActionCount] = useState(0);
 
   // Date Filters
   const [startDate, setStartDate] = useState(() => sessionStorage.getItem('arrivals_startDate') || '');
@@ -432,6 +438,51 @@ const ArrivalsTable = () => {
     }).filter(Boolean);
 
     bulkMutation.mutate(records);
+  };
+
+  const handleBulkApprove = () => {
+    // Double check logic before execution
+    const selectedArrivals = arrivals.filter(a => selectedIds.includes(a.MRN));
+    const isAllNeedsCheck = selectedArrivals.length > 0 && selectedArrivals.every(a => getStatus(a).value === 'needs_check');
+
+    if (!isAllNeedsCheck) {
+      alert("This action is only available when ALL selected items have 'Needs Check' status.");
+      return;
+    }
+
+    setBulkActionCount(selectedIds.length);
+    setIsBulkSuccess(false);
+    setShowBulkApproveModal(true);
+  };
+
+  const confirmBulkApprove = () => {
+    const records = selectedIds.map(mrn => {
+      const arrival = arrivals.find(a => a.MRN === mrn);
+      if (!arrival) return null;
+
+      return {
+        mrn: mrn,
+        tracking_data: {
+          user: user?.name || 'Unknown User',
+          action: 'approved',
+          note: 'Bulk approved as complete via Arrivals Table',
+          status: 'complete',
+          saldo: arrival.saldo,
+          outbounds_count: arrival.Outbounds?.length || 0,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }).filter(Boolean);
+
+    bulkMutation.mutate(records, {
+      onSuccess: () => {
+        setIsBulkSuccess(true);
+        setTimeout(() => {
+          setShowBulkApproveModal(false);
+          setIsBulkSuccess(false);
+        }, 1500);
+      }
+    });
   };
 
   const handleRequestExport = (scope) => {
@@ -1078,6 +1129,23 @@ const ArrivalsTable = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Smart Approve Button: Only shows if ALL selected are 'needs_check' */}
+            {arrivals.filter(a => selectedIds.includes(a.MRN)).every(a => getStatus(a).value === 'needs_check') && (
+              <button
+                onClick={handleBulkApprove}
+                disabled={bulkMutation.isLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/40 border border-green-400/50 rounded transition-colors mr-2"
+                title="Approve all selected as complete"
+              >
+                {bulkMutation.isLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-green-300" />
+                )}
+                <span className="text-sm font-medium text-green-100">Approve Complete</span>
+              </button>
+            )}
+
             {arrivals.filter(a => selectedIds.includes(a.MRN) && getStatus(a).value !== 'complete').length > 0 && (
               <button
                 onClick={handleBulkCheck}
@@ -1104,6 +1172,21 @@ const ArrivalsTable = () => {
           </button>
         </div>
       )}
+
+      {/* Premium Bulk Approval Modal */}
+      <PremiumConfirmationModal
+        isOpen={showBulkApproveModal}
+        onClose={() => setShowBulkApproveModal(false)}
+        onConfirm={confirmBulkApprove}
+        title="Approve All Selected"
+        message={`Are you sure you want to approve ${bulkActionCount} arrivals as complete? This action will mark them as verified and remove the 'Needs Check' warning.`}
+        confirmText="Approve All"
+        cancelText="Cancel"
+        type="info"
+        isLoading={bulkMutation.isLoading}
+        isSuccess={isBulkSuccess}
+        successMessage={`${bulkActionCount} arrivals approved successfully!`}
+      />
 
       {trackingModalOpen && selectedArrival && (
         <TrackingModal
