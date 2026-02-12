@@ -15,6 +15,7 @@ import EmailAssistant from './pages/ai-agents/EmailAssistant';
 import ContainerWeightCheck from './pages/Containers/ContainerWeightCheck';
 import ArrivalsTable from './pages/arrivals/ArrivalsTable';
 import OutboundsTable from './pages/arrivals/OutboundsTable.jsx';
+import SendingFiscal from './pages/fiscal-representation/SendingFiscal';
 import RequireRole from './components/auth/RequireRole';
 
 const withAccess = (element, allowedRoles) => (
@@ -73,6 +74,7 @@ const router = createBrowserRouter([
       },
       { path: 'arrivals', element: withAccess(<ArrivalsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader']) },
     ],
     errorElement: <NotFound />,
   },

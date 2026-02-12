@@ -1,8 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
 import fs from 'fs';
+import dotenv from 'dotenv';
+import { BlobServiceClient } from '@azure/storage-blob';
+
+dotenv.config();
 
 // Fix __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -88,9 +91,149 @@ app.post('/api/tracking/bulk', (req, res) => {
   res.json({ success: true, message: `${updateCount} records updated successfully` });
 });
 
+// ============================================================
+// Fiscal Representation - Azure Blob Storage CRUD for Principals
+// ============================================================
+const FISCAL_CONTAINER = "document-intelligence";
+const FISCAL_BLOB_PATH = "FiscalRepresentationWebApp/principals.json";
+
+// Helper: get blob client
+const getFiscalBlobClient = () => {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) {
+    throw new Error('AZURE_STORAGE_CONNECTION_STRING is not configured');
+  }
+  const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+  const containerClient = blobServiceClient.getContainerClient(FISCAL_CONTAINER);
+  return containerClient.getBlockBlobClient(FISCAL_BLOB_PATH);
+};
+
+// Helper: read principals from blob
+const readPrincipals = async () => {
+  try {
+    const blobClient = getFiscalBlobClient();
+    const downloadResponse = await blobClient.download(0);
+    const chunks = [];
+    for await (const chunk of downloadResponse.readableStreamBody) {
+      chunks.push(chunk);
+    }
+    const content = Buffer.concat(chunks).toString('utf8');
+    const data = JSON.parse(content);
+    return data.principals || [];
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return [];
+    }
+    throw err;
+  }
+};
+
+// Helper: write principals to blob
+const writePrincipals = async (principals) => {
+  const blobClient = getFiscalBlobClient();
+  const content = JSON.stringify({ principals }, null, 2);
+  await blobClient.upload(content, content.length, {
+    overwrite: true,
+    blobHTTPHeaders: { blobContentType: 'application/json' },
+  });
+};
+
+// GET - List all principals
+app.get('/api/fiscal/principals', async (req, res) => {
+  try {
+    const principals = await readPrincipals();
+    res.json({ principals });
+  } catch (err) {
+    console.error('Error reading principals:', err);
+    res.status(500).json({ error: 'Failed to read principals' });
+  }
+});
+
+// POST - Add a principal
+app.post('/api/fiscal/principals', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Principal name is required' });
+    }
+
+    const principals = await readPrincipals();
+    const trimmed = name.trim();
+
+    if (principals.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+      return res.status(409).json({ error: 'Principal already exists' });
+    }
+
+    principals.push(trimmed);
+    principals.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    await writePrincipals(principals);
+
+    res.json({ success: true, message: `"${trimmed}" added`, principals });
+  } catch (err) {
+    console.error('Error adding principal:', err);
+    res.status(500).json({ error: 'Failed to add principal' });
+  }
+});
+
+// PUT - Update a principal
+app.put('/api/fiscal/principals', async (req, res) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName || !newName.trim()) {
+      return res.status(400).json({ error: 'Both oldName and newName are required' });
+    }
+
+    const principals = await readPrincipals();
+    const index = principals.findIndex(p => p === oldName);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Principal not found' });
+    }
+
+    const trimmed = newName.trim();
+    if (principals.some(p => p.toLowerCase() === trimmed.toLowerCase() && p !== oldName)) {
+      return res.status(409).json({ error: 'A principal with this name already exists' });
+    }
+
+    principals[index] = trimmed;
+    principals.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    await writePrincipals(principals);
+
+    res.json({ success: true, message: `"${oldName}" renamed to "${trimmed}"`, principals });
+  } catch (err) {
+    console.error('Error updating principal:', err);
+    res.status(500).json({ error: 'Failed to update principal' });
+  }
+});
+
+// DELETE - Remove a principal
+app.delete('/api/fiscal/principals', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Principal name is required' });
+    }
+
+    const principals = await readPrincipals();
+    const index = principals.findIndex(p => p === name);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Principal not found' });
+    }
+
+    principals.splice(index, 1);
+    await writePrincipals(principals);
+
+    res.json({ success: true, message: `"${name}" removed`, principals });
+  } catch (err) {
+    console.error('Error deleting principal:', err);
+    res.status(500).json({ error: 'Failed to delete principal' });
+  }
+});
+
 // Health Check & Version
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.2.0', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '1.3.0', timestamp: new Date().toISOString() });
 });
 
 // Debug middleware for unhandled requests

@@ -41,7 +41,9 @@ const OutboundsTable = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [outboundToDelete, setOutboundToDelete] = useState(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showFlagModal, setShowFlagModal] = useState(false);
   const [isSuccessState, setIsSuccessState] = useState(false);
+  const [isFlagSuccess, setIsFlagSuccess] = useState(false);
   const { user, hasRole } = useAuth();
 
   // ✨ React Query - Uses cached data from ArrivalsTable (NO API CALL if cached!)
@@ -84,6 +86,32 @@ const OutboundsTable = () => {
     onError: (error) => {
       alert(`Failed to approve: ${error.message}`);
       setShowApproveModal(false);
+    }
+  });
+
+  // Mutation for flagging as "Needs Check" (revoking approval)
+  const flagMutation = useMutation({
+    mutationFn: (note) => addTrackingRecord(mrn, {
+      user: user?.name || 'Unknown User',
+      action: 'unapproved',
+      note: note || 'Flagged as Needs Check',
+      status: 'needs_check',
+      timestamp: new Date().toISOString()
+    }),
+    onSuccess: async () => {
+      setIsFlagSuccess(true);
+
+      await queryClient.invalidateQueries({ queryKey: ['tracking', mrn] });
+      await queryClient.invalidateQueries({ queryKey: ['arrivals'] });
+      await queryClient.invalidateQueries({ queryKey: ['all_tracking'] });
+
+      setTimeout(() => {
+        navigate('/arrivals', { replace: true });
+      }, 1500);
+    },
+    onError: (error) => {
+      alert(`Failed to flag: ${error.message}`);
+      setShowFlagModal(false);
     }
   });
 
@@ -419,7 +447,16 @@ const OutboundsTable = () => {
     return docPrecedent.trim() && !docPrecedent.trim().startsWith('N821');
   });
 
-  const isApproved = trackingRecords.some(r => r.action === 'approved');
+  // Latest action wins: check if most recent approve/unapprove action is 'approved'
+  const latestApprovalAction = (() => {
+    const relevant = trackingRecords
+      .filter(r => r.action === 'approved' || r.action === 'unapproved')
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return relevant.length > 0 ? relevant[0].action : null;
+  })();
+
+  const isApproved = latestApprovalAction === 'approved';
+  const isFlagged = latestApprovalAction === 'unapproved';
 
   const handleApprove = () => {
     setShowApproveModal(true);
@@ -427,6 +464,14 @@ const OutboundsTable = () => {
 
   const confirmApprove = () => {
     approveMutation.mutate("Verified document format manually");
+  };
+
+  const handleFlag = () => {
+    setShowFlagModal(true);
+  };
+
+  const confirmFlag = () => {
+    flagMutation.mutate("Flagged as Needs Check from Outbounds page");
   };
 
   if (!inboundData) {
@@ -551,7 +596,31 @@ const OutboundsTable = () => {
                 {inboundData?.saldo !== undefined ? formatNumber(inboundData.saldo) : 'N/A'}
               </p>
             </div>
-            {saldoStatus && !isApproved && (
+            {/* Status display */}
+            {isFlagged && (
+              <div>
+                <p className="text-xs text-text-muted uppercase mb-1">Status</p>
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 border border-amber-400 text-amber-600 bg-amber-50 text-xs font-medium">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Needs Check
+                </div>
+              </div>
+            )}
+            {isFlagged && inboundData.saldo === 0 && (
+              <div>
+                <p className="text-xs text-text-muted uppercase mb-1">Action</p>
+                <button
+                  onClick={handleApprove}
+                  disabled={approveMutation.isPending || showApproveModal}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors shadow-sm"
+                  title="Approve as complete"
+                >
+                  {approveMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                  {approveMutation.isPending ? 'Approving...' : 'Approve as Complete'}
+                </button>
+              </div>
+            )}
+            {!isFlagged && saldoStatus && !isApproved && (
               <div>
                 <p className="text-xs text-text-muted uppercase mb-1">Status</p>
                 <div className={`inline-flex items-center gap-1.5 px-2 py-1 border text-xs font-medium ${saldoStatus.color === 'success'
@@ -563,7 +632,7 @@ const OutboundsTable = () => {
                 </div>
               </div>
             )}
-            {isApproved && inboundData.saldo === 0 && (
+            {!isFlagged && isApproved && inboundData.saldo === 0 && (
               <div>
                 <p className="text-xs text-text-muted uppercase mb-1">Status</p>
                 <div className="inline-flex items-center gap-1.5 px-2 py-1 border border-success text-success bg-green-50 text-xs font-medium">
@@ -572,17 +641,32 @@ const OutboundsTable = () => {
                 </div>
               </div>
             )}
-            {hasDocPrecedentAlert && !isApproved && inboundData.saldo === 0 && (
+            {!isFlagged && hasDocPrecedentAlert && !isApproved && inboundData.saldo === 0 && (
               <div>
                 <p className="text-xs text-text-muted uppercase mb-1">Action Required</p>
                 <button
                   onClick={handleApprove}
-                  disabled={approveMutation.isPending}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded transition-colors shadow-sm"
+                  disabled={approveMutation.isPending || showApproveModal}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors shadow-sm"
                   title="Mark as complete despite document format alerts"
                 >
-                  <CheckCircle className="w-3.5 h-3.5" />
+                  {approveMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
                   {approveMutation.isPending ? 'Approving...' : 'Approve as Complete'}
+                </button>
+              </div>
+            )}
+            {/* Flag as Needs Check button — shows when arrival is Complete (not already flagged) */}
+            {!isFlagged && !hasDocPrecedentAlert && inboundData.saldo === 0 && (
+              <div>
+                <p className="text-xs text-text-muted uppercase mb-1">Action</p>
+                <button
+                  onClick={handleFlag}
+                  disabled={flagMutation.isPending || showFlagModal}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors shadow-sm"
+                  title="Flag this arrival as Needs Check"
+                >
+                  {flagMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                  {flagMutation.isPending ? 'Flagging...' : 'Flag Needs Check'}
                 </button>
               </div>
             )}
@@ -1159,6 +1243,21 @@ const OutboundsTable = () => {
           isLoading={approveMutation.isPending}
           isSuccess={isSuccessState}
           successMessage="File approved! Returning to Arrivals..."
+        />
+
+        {/* Flag as Needs Check Modal */}
+        <PremiumConfirmationModal
+          isOpen={showFlagModal}
+          onClose={() => setShowFlagModal(false)}
+          onConfirm={confirmFlag}
+          title="Flag as Needs Check"
+          message={`Are you sure you want to flag MRN ${mrn} as 'Needs Check'? This will revoke any existing approval and require re-verification.`}
+          confirmText="Flag as Needs Check"
+          cancelText="Cancel"
+          type="warning"
+          isLoading={flagMutation.isPending}
+          isSuccess={isFlagSuccess}
+          successMessage="Flagged as Needs Check! Returning to Arrivals..."
         />
       </div>
     </div>

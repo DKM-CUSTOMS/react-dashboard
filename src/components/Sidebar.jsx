@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Container,
   X,
+  Landmark,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -103,6 +104,17 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Performance', path: '/statistics/performance' },
         { label: 'Compare', path: '/statistics/performance/compare' },
         { label: 'Monthly Report', path: '/statistics/monthly-report' },
+      ],
+      hasSubmenu: true,
+    },
+    {
+      id: 'fiscal',
+      label: 'Fiscal Rep.',
+      icon: Landmark,
+      path: '/fiscal/sending',
+      allowedRoles: ['admin', 'manager', 'Team Leader'],
+      subtitles: [
+        { label: 'Sending Fiscal', path: '/fiscal/sending' },
       ],
       hasSubmenu: true,
     },

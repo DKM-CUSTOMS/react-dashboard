@@ -65,6 +65,11 @@ const ArrivalsTable = () => {
   const [isBulkSuccess, setIsBulkSuccess] = useState(false);
   const [bulkActionCount, setBulkActionCount] = useState(0);
 
+  // Bulk Revoke (Flag as Needs Check) Modal State
+  const [showBulkRevokeModal, setShowBulkRevokeModal] = useState(false);
+  const [isBulkRevokeSuccess, setIsBulkRevokeSuccess] = useState(false);
+  const [bulkRevokeCount, setBulkRevokeCount] = useState(0);
+
   // Date Filters
   const [startDate, setStartDate] = useState(() => sessionStorage.getItem('arrivals_startDate') || '');
   const [endDate, setEndDate] = useState(() => sessionStorage.getItem('arrivals_endDate') || '');
@@ -72,7 +77,7 @@ const ArrivalsTable = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const rowsPerPage = 9;
+  const rowsPerPage = 16;
 
   // Track if this is the initial mount
   const isInitialMount = React.useRef(true);
@@ -115,16 +120,25 @@ const ArrivalsTable = () => {
     return relevantRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
   };
 
-  // Helper to check if an MRN is manually approved
-  const isManuallyApproved = (mrn) => {
-    if (!trackingData || !Array.isArray(trackingData)) return false;
+  // Helper to get the latest approval/unapproval action for an MRN
+  const getLatestApprovalAction = (mrn) => {
+    if (!trackingData || !Array.isArray(trackingData)) return null;
     const normalizedMrn = String(mrn).trim().toUpperCase();
     const record = trackingData.find(r => String(r.MRN).trim().toUpperCase() === normalizedMrn);
-    if (!record || !record.tracking_records) return false;
+    if (!record || !record.tracking_records) return null;
 
-    // Check if any record has action 'approved'
-    return record.tracking_records.some(r => r.action === 'approved');
+    const relevant = record.tracking_records
+      .filter(r => r.action === 'approved' || r.action === 'unapproved')
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    return relevant.length > 0 ? relevant[0].action : null;
   };
+
+  // Helper to check if an MRN is manually approved (latest action wins)
+  const isManuallyApproved = (mrn) => getLatestApprovalAction(mrn) === 'approved';
+
+  // Helper to check if an MRN is manually flagged as needs check
+  const isManuallyFlagged = (mrn) => getLatestApprovalAction(mrn) === 'unapproved';
 
   // Fonction pour déterminer le statut en fonction du saldo et du nombre d'outbounds
   const getStatus = (arrival) => {
@@ -141,6 +155,17 @@ const ArrivalsTable = () => {
     });
 
     const manuallyApproved = isManuallyApproved(arrival.MRN);
+    const manuallyFlagged = isManuallyFlagged(arrival.MRN);
+
+    // HIGHEST: If manually flagged as needs check by a user, always show Needs Check
+    if (manuallyFlagged) {
+      return {
+        label: 'Needs Check',
+        value: 'needs_check',
+        color: 'warning',
+        icon: AlertCircle
+      };
+    }
 
     // Only return "Needs Check" if there's an alert AND it hasn't been approved yet
     if (hasDocPrecedentAlert && !manuallyApproved) {
@@ -402,9 +427,10 @@ const ArrivalsTable = () => {
   // Bulk Mutation
   const bulkMutation = useMutation({
     mutationFn: (records) => addBulkTrackingRecords(records),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries(['all_tracking']);
-      queryClient.invalidateQueries(['arrivals']);
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['all_tracking'] });
+      await queryClient.invalidateQueries({ queryKey: ['tracking'] });
+      await queryClient.invalidateQueries({ queryKey: ['arrivals'] });
       setSelectedIds([]);
       setBulkModalOpen(false);
       setBulkNote('');
@@ -475,11 +501,65 @@ const ArrivalsTable = () => {
     }).filter(Boolean);
 
     bulkMutation.mutate(records, {
-      onSuccess: () => {
+      onSuccess: async () => {
         setIsBulkSuccess(true);
+        // Ensure fresh data is loaded before closing
+        await queryClient.invalidateQueries({ queryKey: ['all_tracking'] });
+        await queryClient.invalidateQueries({ queryKey: ['tracking'] });
+        await queryClient.invalidateQueries({ queryKey: ['arrivals'] });
         setTimeout(() => {
           setShowBulkApproveModal(false);
           setIsBulkSuccess(false);
+          setSelectedIds([]);
+        }, 1500);
+      }
+    });
+  };
+
+  const handleBulkRevoke = () => {
+    const selectedArrivals = arrivals.filter(a => selectedIds.includes(a.MRN));
+    const isAllComplete = selectedArrivals.length > 0 && selectedArrivals.every(a => getStatus(a).value === 'complete');
+
+    if (!isAllComplete) {
+      alert("This action is only available when ALL selected items have 'Complete' status.");
+      return;
+    }
+
+    setBulkRevokeCount(selectedIds.length);
+    setIsBulkRevokeSuccess(false);
+    setShowBulkRevokeModal(true);
+  };
+
+  const confirmBulkRevoke = () => {
+    const records = selectedIds.map(mrn => {
+      const arrival = arrivals.find(a => a.MRN === mrn);
+      if (!arrival) return null;
+
+      return {
+        mrn: mrn,
+        tracking_data: {
+          user: user?.name || 'Unknown User',
+          action: 'unapproved',
+          note: 'Bulk revoked approval — flagged as Needs Check',
+          status: 'needs_check',
+          saldo: arrival.saldo,
+          outbounds_count: arrival.Outbounds?.length || 0,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }).filter(Boolean);
+
+    bulkMutation.mutate(records, {
+      onSuccess: async () => {
+        setIsBulkRevokeSuccess(true);
+        // Ensure fresh data is loaded before closing
+        await queryClient.invalidateQueries({ queryKey: ['all_tracking'] });
+        await queryClient.invalidateQueries({ queryKey: ['tracking'] });
+        await queryClient.invalidateQueries({ queryKey: ['arrivals'] });
+        setTimeout(() => {
+          setShowBulkRevokeModal(false);
+          setIsBulkRevokeSuccess(false);
+          setSelectedIds([]);
         }, 1500);
       }
     });
@@ -830,43 +910,43 @@ const ArrivalsTable = () => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-3 py-2 text-left w-10">
+                <th className="px-2 py-1.5 text-left w-8">
                   <input
                     type="checkbox"
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     onChange={handleSelectAll}
                     checked={paginatedArrivals.length > 0 && paginatedArrivals.every(a => selectedIds.includes(a.MRN))}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   ID
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   MRN
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Commercial Ref
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Packages
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Gross Mass (kg)
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Released Date
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Outbounds
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Saldo
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-4 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-2 py-1.5 text-left text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -915,91 +995,89 @@ const ArrivalsTable = () => {
                       className={`border-b border-border hover:bg-gray-50 cursor-pointer transition-colors ${needsRecheck ? 'bg-red-50/30' : ''} ${selectedIds.includes(arrival.MRN) ? 'bg-blue-50' : ''}`}
                     >
                       <td
-                        className="px-3 py-4 w-12"
+                        className="px-2 py-1.5 w-8"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
                           type="checkbox"
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                           checked={selectedIds.includes(arrival.MRN)}
                           onChange={(e) => handleSelectRow(arrival.MRN, e)}
                           onClick={(e) => e.stopPropagation()}
                         />
                       </td>
-                      <td className="px-6 py-4 text-sm text-text-primary">
+                      <td className="px-2 py-1.5 text-xs text-text-primary">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleCopy(arrival.DECLARATIONID, `id-${arrival.DECLARATIONID}`);
                           }}
-                          className={`relative px-2 py-1 rounded transition-all duration-300 text-left ${copiedId === `id-${arrival.DECLARATIONID}`
+                          className={`relative px-1.5 py-0.5 rounded transition-all duration-300 text-left ${copiedId === `id-${arrival.DECLARATIONID}`
                             ? 'bg-primary text-white'
                             : 'hover:bg-primary hover:text-white hover:shadow-sm'
                             }`}
                         >
-                          {copiedId === `id-${arrival.DECLARATIONID}` ? '✓ Copied!' : arrival.DECLARATIONID || 'N/A'}
+                          {copiedId === `id-${arrival.DECLARATIONID}` ? '✓' : arrival.DECLARATIONID || 'N/A'}
                         </button>
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary">
+                      <td className="px-2 py-1.5 text-xs font-medium text-text-primary">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleCopy(arrival.MRN, `mrn-${arrival.MRN}`);
                           }}
-                          className={`relative px-2 py-1 rounded transition-all duration-300 text-left ${copiedId === `mrn-${arrival.MRN}`
+                          className={`relative px-1.5 py-0.5 rounded transition-all duration-300 text-left ${copiedId === `mrn-${arrival.MRN}`
                             ? 'bg-primary text-white'
                             : 'hover:bg-primary hover:text-white hover:shadow-sm'
                             }`}
                         >
-                          {copiedId === `mrn-${arrival.MRN}` ? '✓ Copied!' : arrival.MRN || 'N/A'}
+                          {copiedId === `mrn-${arrival.MRN}` ? '✓' : arrival.MRN || 'N/A'}
                         </button>
                       </td>
-                      <td className="px-6 py-4 text-sm text-text-primary">
+                      <td className="px-2 py-1.5 text-xs text-text-primary">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleCopy(arrival.COMMERCIALREFERENCE, `ref-${arrival.COMMERCIALREFERENCE}`);
                           }}
-                          className={`relative px-2 py-1 rounded transition-all duration-300 text-left ${copiedId === `ref-${arrival.COMMERCIALREFERENCE}`
+                          className={`relative px-1.5 py-0.5 rounded transition-all duration-300 text-left ${copiedId === `ref-${arrival.COMMERCIALREFERENCE}`
                             ? 'bg-primary text-white'
                             : 'hover:bg-primary hover:text-white hover:shadow-sm'
                             }`}
                         >
-                          {copiedId === `ref-${arrival.COMMERCIALREFERENCE}` ? '✓ Copied!' : arrival.COMMERCIALREFERENCE || 'N/A'}
+                          {copiedId === `ref-${arrival.COMMERCIALREFERENCE}` ? '✓' : arrival.COMMERCIALREFERENCE || 'N/A'}
                         </button>
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary">
+                      <td className="px-2 py-1.5 text-xs font-medium text-text-primary">
                         {formatNumber(arrival.TOTAL_PACKAGES)}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-text-primary">
+                      <td className="px-2 py-1.5">
+                        <div className="text-xs font-medium text-text-primary">
                           {formatNumber(Math.round(arrival.TOTAL_ITEM_GROSSMASS || 0))}
                         </div>
                         {arrival.TOTAL_ITEM_NETMASS > 0 && (
-                          <div className="text-xs text-text-muted">
+                          <div className="text-[10px] text-text-muted leading-tight">
                             Net: {formatNumber(Math.round(arrival.TOTAL_ITEM_NETMASS))}
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-text-primary">
+                      <td className="px-2 py-1.5">
+                        <div className="text-xs text-text-primary">
                           {formatDate(arrival.GDSREL_DATETIME)}
                         </div>
                         {arrival.ARR_NOT_DATETIME && (
-                          <div className="text-xs text-text-muted">
+                          <div className="text-[10px] text-text-muted leading-tight">
                             Arr: {formatDate(arrival.ARR_NOT_DATETIME)}
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text-primary">
-                            {arrival.Outbounds ? arrival.Outbounds.length : 0}
-                          </span>
-                        </div>
+                      <td className="px-2 py-1.5">
+                        <span className="text-xs font-medium text-text-primary">
+                          {arrival.Outbounds ? arrival.Outbounds.length : 0}
+                        </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`text-sm font-semibold ${arrival.saldo === 0
+                      <td className="px-2 py-1.5">
+                        <span className={`text-xs font-semibold ${arrival.saldo === 0
                           ? 'text-success'
                           : arrival.saldo > 0
                             ? 'text-error'
@@ -1008,40 +1086,40 @@ const ArrivalsTable = () => {
                           {arrival.saldo !== undefined ? formatNumber(arrival.saldo) : 'N/A'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <div className={`flex items-center w-fit gap-1.5 px-2 py-1 border text-xs font-medium ${statusClasses}`}>
-                            <StatusIcon className="w-3.5 h-3.5" />
+                      <td className="px-2 py-1.5">
+                        <div className="flex flex-col">
+                          <div className={`flex items-center w-fit gap-1 px-1.5 py-0.5 border text-[10px] font-medium ${statusClasses}`}>
+                            <StatusIcon className="w-3 h-3" />
                             {status.label}
                           </div>
 
                           {/* Checked Status Info */}
                           {trackingInfo && (
-                            <div className={`text-xs mt-1 flex flex-col ${needsRecheck ? 'text-red-600 font-medium' : 'text-green-600'}`}>
-                              <span className="flex items-center gap-1">
-                                {needsRecheck ? <AlertCircle className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
-                                {needsRecheck ? 'Re-check needed' : 'Checked'}
+                            <div className={`text-[10px] mt-0.5 flex flex-col ${needsRecheck ? 'text-red-600 font-medium' : 'text-green-600'}`}>
+                              <span className="flex items-center gap-0.5">
+                                {needsRecheck ? <AlertCircle className="w-2.5 h-2.5" /> : <CheckCircle className="w-2.5 h-2.5" />}
+                                {needsRecheck ? 'Re-check' : 'Checked'}
                               </span>
                             </div>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-2 py-1.5">
                         {status.value === 'complete' ? (
                           trackingInfo && (
                             <button
                               onClick={(e) => handleOpenTracking(arrival, e)}
-                              className="relative flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 rounded transition-colors"
+                              className="relative flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 rounded transition-colors"
                               title="View tracking history"
                             >
-                              <Clock className="w-3 h-3" />
-                              <span className="text-xs font-medium">History</span>
+                              <Clock className="w-2.5 h-2.5" />
+                              <span className="text-[10px] font-medium">History</span>
                             </button>
                           )
                         ) : (
                           <button
                             onClick={(e) => handleOpenTracking(arrival, e)}
-                            className={`relative flex items-center gap-1.5 px-2 py-1 rounded transition-all ${(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting' && !trackingInfo) || needsRecheck
+                            className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded transition-all ${(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting' && !trackingInfo) || needsRecheck
                               ? 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
                               : trackingInfo
                                 ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200'
@@ -1057,13 +1135,13 @@ const ArrivalsTable = () => {
                           >
                             {(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting' && !trackingInfo) || needsRecheck ? (
                               <>
-                                <Mail className="w-3 h-3" />
-                                <span className="text-xs font-semibold">Alert</span>
+                                <Mail className="w-2.5 h-2.5" />
+                                <span className="text-[10px] font-semibold">Alert</span>
                               </>
                             ) : (
                               <>
-                                {trackingInfo ? <CheckCircle className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
-                                <span className="text-xs">{trackingInfo ? 'View' : 'Track'}</span>
+                                {trackingInfo ? <CheckCircle className="w-2.5 h-2.5" /> : <MessageSquare className="w-2.5 h-2.5" />}
+                                <span className="text-[10px]">{trackingInfo ? 'View' : 'Track'}</span>
                               </>
                             )}
                           </button>
@@ -1078,8 +1156,8 @@ const ArrivalsTable = () => {
         </div>
 
         {/* Footer with Pagination */}
-        <div className="mt-4 px-6 py-3 bg-surface border border-border">
-          <div className="flex items-center justify-between text-sm text-text-muted">
+        <div className="mt-2 px-4 py-2 bg-surface border border-border">
+          <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
               Showing {startIndex + 1}-{Math.min(endIndex, sortedArrivals.length)} of {sortedArrivals.length} arrivals
               {sortedArrivals.length !== arrivals.length && ` (filtered from ${arrivals.length})`}
@@ -1133,26 +1211,48 @@ const ArrivalsTable = () => {
             {arrivals.filter(a => selectedIds.includes(a.MRN)).every(a => getStatus(a).value === 'needs_check') && (
               <button
                 onClick={handleBulkApprove}
-                disabled={bulkMutation.isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/40 border border-green-400/50 rounded transition-colors mr-2"
+                disabled={bulkMutation.isPending || showBulkApproveModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed border border-green-400/50 rounded transition-colors mr-2"
                 title="Approve all selected as complete"
               >
-                {bulkMutation.isLoading ? (
+                {bulkMutation.isPending ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <CheckCircle className="w-4 h-4 text-green-300" />
                 )}
-                <span className="text-sm font-medium text-green-100">Approve Complete</span>
+                <span className="text-sm font-medium text-green-100">{bulkMutation.isPending ? 'Processing...' : 'Approve Complete'}</span>
+              </button>
+            )}
+
+            {/* Smart Revoke Button: Only shows if ALL selected are 'complete' */}
+            {arrivals.filter(a => selectedIds.includes(a.MRN)).every(a => getStatus(a).value === 'complete') && (
+              <button
+                onClick={handleBulkRevoke}
+                disabled={bulkMutation.isPending || showBulkRevokeModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 disabled:opacity-50 disabled:cursor-not-allowed border border-amber-400/50 rounded transition-colors mr-2"
+                title="Flag all selected as Needs Check"
+              >
+                {bulkMutation.isPending ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-300" />
+                )}
+                <span className="text-sm font-medium text-amber-100">{bulkMutation.isPending ? 'Processing...' : 'Flag Needs Check'}</span>
               </button>
             )}
 
             {arrivals.filter(a => selectedIds.includes(a.MRN) && getStatus(a).value !== 'complete').length > 0 && (
               <button
                 onClick={handleBulkCheck}
-                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-white/20 rounded transition-colors"
+                disabled={bulkMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
               >
-                <CheckSquare className="w-4 h-4" />
-                <span className="text-sm">Mark Checked</span>
+                {bulkMutation.isPending ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckSquare className="w-4 h-4" />
+                )}
+                <span className="text-sm">{bulkMutation.isPending ? 'Processing...' : 'Mark Checked'}</span>
               </button>
             )}
             <button
@@ -1183,9 +1283,24 @@ const ArrivalsTable = () => {
         confirmText="Approve All"
         cancelText="Cancel"
         type="info"
-        isLoading={bulkMutation.isLoading}
+        isLoading={bulkMutation.isPending}
         isSuccess={isBulkSuccess}
         successMessage={`${bulkActionCount} arrivals approved successfully!`}
+      />
+
+      {/* Premium Bulk Revoke Modal */}
+      <PremiumConfirmationModal
+        isOpen={showBulkRevokeModal}
+        onClose={() => setShowBulkRevokeModal(false)}
+        onConfirm={confirmBulkRevoke}
+        title="Flag as Needs Check"
+        message={`Are you sure you want to flag ${bulkRevokeCount} arrivals as 'Needs Check'? This will revoke their approval and require re-verification.`}
+        confirmText="Flag All"
+        cancelText="Cancel"
+        type="warning"
+        isLoading={bulkMutation.isPending}
+        isSuccess={isBulkRevokeSuccess}
+        successMessage={`${bulkRevokeCount} arrivals flagged as Needs Check!`}
       />
 
       {trackingModalOpen && selectedArrival && (
@@ -1240,10 +1355,10 @@ const ArrivalsTable = () => {
               </button>
               <button
                 onClick={handleBulkConfirm}
-                disabled={bulkMutation.isLoading}
+                disabled={bulkMutation.isPending}
                 className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm disabled:opacity-50"
               >
-                {bulkMutation.isLoading ? 'Processing...' : 'Confirm'}
+                {bulkMutation.isPending ? 'Processing...' : 'Confirm'}
               </button>
             </div>
           </div>
