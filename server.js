@@ -2,10 +2,10 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import dotenv from 'dotenv';
+
 import { BlobServiceClient } from '@azure/storage-blob';
 
-dotenv.config();
+
 
 // Fix __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);

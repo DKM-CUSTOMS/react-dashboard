@@ -1,11 +1,11 @@
 /**
  * One-time script to upload initial principals.json to Azure Blob Storage.
- * Run with: node scripts/seed-principals.js
+ * Run with: node --env-file=.env scripts/seed-principals.js
  */
-import dotenv from 'dotenv';
+
 import { BlobServiceClient } from '@azure/storage-blob';
 
-dotenv.config();
+
 
 const CONTAINER = "document-intelligence";
 const BLOB_PATH = "FiscalRepresentationWebApp/principals.json";
