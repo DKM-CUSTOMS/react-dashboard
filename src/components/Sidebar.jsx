@@ -112,7 +112,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       label: 'Fiscal Rep.',
       icon: Landmark,
       path: '/fiscal/sending',
-      allowedRoles: ['admin', 'manager', 'Team Leader'],
+      allowedRoles: ['admin', 'manager', 'Team Leader', 'Administrator'],
       subtitles: [
         { label: 'Sending Fiscal', path: '/fiscal/sending' },
       ],
