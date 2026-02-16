@@ -5,6 +5,15 @@ import fs from 'fs';
 
 import { BlobServiceClient } from '@azure/storage-blob';
 
+// Load environment variables from .env file natively (Node.js 21.7.0+)
+try {
+  process.loadEnvFile();
+  console.log('Environment variables loaded from .env');
+} catch (e) {
+  // .env file might not exist in production
+  console.log('No .env file found, using system environment variables');
+}
+
 
 
 // Fix __dirname in ES modules
@@ -99,9 +108,9 @@ const FISCAL_BLOB_PATH = "FiscalRepresentationWebApp/principals.json";
 
 // Helper: get blob client
 const getFiscalBlobClient = () => {
-  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  const connectionString = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
   if (!connectionString) {
-    throw new Error('AZURE_STORAGE_CONNECTION_STRING is not configured');
+    throw new Error('VITE_AZURE_STORAGE_CONNECTION_STRING is not configured');
   }
   const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
   const containerClient = blobServiceClient.getContainerClient(FISCAL_CONTAINER);
