@@ -74,7 +74,7 @@ const router = createBrowserRouter([
       },
       { path: 'arrivals', element: withAccess(<ArrivalsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
-      { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader']) },
+      { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
     ],
     errorElement: <NotFound />,
   },

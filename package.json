@@ -23,6 +23,7 @@
     "html2pdf.js": "^0.10.3",
     "lucide-react": "^0.516.0",
     "mammoth": "^1.10.0",
+    "mysql2": "^3.17.2",
     "pdfjs-dist": "^5.4.54",
     "react": "^19.1.0",
     "react-calendar-heatmap": "^1.10.0",

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 import { BlobServiceClient } from '@azure/storage-blob';
+import mysql from 'mysql2/promise';
+import syncRoutes from './server/routes/sync.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
 try {
@@ -242,7 +244,90 @@ app.delete('/api/fiscal/principals', async (req, res) => {
 
 // Health Check & Version
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.3.0', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '1.3.1-debug', timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// Database Debugging Tools (VNet Proxy)
+// ============================================================
+const DB_DEBUG_SECRET = "debug123";
+
+const getDbConnection = async () => {
+  return await mysql.createConnection({
+    host: process.env.MYSQL_HOST,
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    database: process.env.MYSQL_DB,
+    ssl: { rejectUnauthorized: false }
+  });
+};
+
+// ============================================================
+// Sync Endpoint for Logic App
+// ============================================================
+app.use('/api/sync', syncRoutes);
+
+// ============================================================
+// Database Debugging Tools (VNet Proxy)
+// ============================================================
+// 1. Inspect Schema (Understand the DB)
+app.get("/api/dev/schema", async (req, res) => {
+  if (req.query.secret !== DB_DEBUG_SECRET) {
+    return res.status(401).json({ error: "Unauthorized. Add ?secret=debug123" });
+  }
+
+  try {
+    const connection = await getDbConnection();
+    // Get all tables
+    const [tables] = await connection.execute("SHOW TABLES");
+    const schema = {};
+
+    // Get columns for each table
+    for (const row of tables) {
+      const tableName = Object.values(row)[0];
+      const [columns] = await connection.execute(`DESCRIBE \`${tableName}\``);
+      schema[tableName] = columns;
+    }
+
+    await connection.end();
+    res.json({ success: true, schema });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Run Raw SQL (Get a connection)
+// Usage: POST /api/dev/query with body { "sql": "SELECT * FROM ...", "secret": "debug123" }
+app.post("/api/dev/query", async (req, res) => {
+  const { sql, secret } = req.body;
+  if (secret !== DB_DEBUG_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!sql) {
+    return res.status(400).json({ error: "Missing 'sql' in body" });
+  }
+
+  try {
+    const connection = await getDbConnection();
+    const [rows] = await connection.execute(sql);
+    await connection.end();
+    res.json({ success: true, count: rows.length, rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Use existing db-check but refactor to use helper
+app.get("/api/dev/db-check", async (req, res) => {
+  try {
+    const connection = await getDbConnection();
+    const [rows] = await connection.execute("SELECT NOW() as time");
+    await connection.end();
+    res.json({ success: true, result: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Debug middleware for unhandled requests
