@@ -6,6 +6,7 @@ import fs from 'fs';
 import { BlobServiceClient } from '@azure/storage-blob';
 import mysql from 'mysql2/promise';
 import syncRoutes from './server/routes/sync.js';
+import declarationRoutes from './server/routes/declarations.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
 try {
@@ -266,6 +267,9 @@ const getDbConnection = async () => {
 // Sync Endpoint for Logic App
 // ============================================================
 app.use('/api/sync', syncRoutes);
+
+// Declarations API
+app.use('/api/declarations', declarationRoutes);
 
 // ============================================================
 // Database Debugging Tools (VNet Proxy)

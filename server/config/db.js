@@ -1,4 +1,3 @@
-
 import mysql from 'mysql2/promise';
 
 export const getDbConnection = async () => {

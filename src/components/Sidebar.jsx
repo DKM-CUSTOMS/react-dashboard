@@ -114,7 +114,8 @@ const Sidebar = ({ collapsed, toggle }) => {
       path: '/fiscal/sending',
       allowedRoles: ['admin', 'manager', 'Administrator'],
       subtitles: [
-        { label: 'Sending Fiscal', path: '/fiscal/sending' },
+        { label: 'Declarations', path: '/fiscal/declarations' },
+        { label: 'Principals', path: '/fiscal/sending' },
       ],
       hasSubmenu: true,
     },
