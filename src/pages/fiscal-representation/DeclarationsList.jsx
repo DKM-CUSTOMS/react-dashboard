@@ -18,7 +18,7 @@ const DeclarationsList = () => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(50);
     const [filters, setFilters] = useState({
-        status: '',
+        status: 'NEW', // Default to showing only "NEW" (Not in Odoo)
         principal: '',
         importer: '',
         from: '',
@@ -27,6 +27,17 @@ const DeclarationsList = () => {
 
     const [selectedDeclaration, setSelectedDeclaration] = useState(null);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+    // New Feature States
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [focusedIndex, setFocusedIndex] = useState(-1);
+    const [isBulkSyncing, setIsBulkSyncing] = useState(false);
+
+    const showToast = (message, type = 'success') => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+    };
 
     const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['declarations', page, pageSize, filters],
@@ -34,29 +45,121 @@ const DeclarationsList = () => {
         keepPreviousData: true,
     });
 
-    const handleCreateProject = async () => {
-        if (!selectedDeclaration) return;
+    const { data: rows = [], pagination } = data || {};
+
+    // ⚡ Keyboard Navigation Logic
+    React.useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (selectedDeclaration) return; // Ignore if modal is open
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setFocusedIndex(prev => Math.min(prev + 1, rows.length - 1));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setFocusedIndex(prev => Math.max(prev - 1, 0));
+            } else if (e.key === 'Enter') {
+                if (focusedIndex >= 0) {
+                    setSelectedDeclaration(rows[focusedIndex]);
+                }
+            } else if (e.key === ' ') { // Space
+                e.preventDefault();
+                if (focusedIndex >= 0) {
+                    const row = rows[focusedIndex];
+                    if (row.odoo_status === 'NEW') {
+                        handleCreateProject(row);
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [rows, focusedIndex, selectedDeclaration]);
+
+    const handleCopy = (text, label) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        showToast(`${label} copied to clipboard!`, 'success');
+    };
+
+    const handleCreateProject = async (targetDeclaration = null) => {
+        const declaration = targetDeclaration || selectedDeclaration;
+        if (!declaration || isCreatingProject || isBulkSyncing) return; // Safety Lock
 
         setIsCreatingProject(true);
         try {
-            const result = await createOdooProject(selectedDeclaration.declaration_id);
-            // Update local state to reflect change immediately if success
-            setSelectedDeclaration(prev => ({
-                ...prev,
-                odoo_status: 'CREATED',
-                odoo_project_id: result.odoo_project_id,
-                odoo_error: null
-            }));
-            refetch(); // Refresh main list
-            alert(`Ticket Created! ID: ${result.odoo_project_id}`);
+            const result = await createOdooProject(declaration.declaration_id);
+
+            // 1. Update main list view through refetch (or manual state update if needed)
+            refetch();
+
+            // 2. If the synced declaration is what we are looking at in the modal, update it
+            if (selectedDeclaration && selectedDeclaration.declaration_id === declaration.declaration_id) {
+                setSelectedDeclaration(prev => ({
+                    ...prev,
+                    odoo_status: 'CREATED',
+                    odoo_project_id: result.odoo_project_id,
+                    odoo_error: null
+                }));
+            }
+
+            showToast(`Ticket #${result.odoo_project_id} Created Successfully!`);
         } catch (err) {
             console.error(err);
-            alert(`Failed to create ticket: ${err.message}`);
-            // If failure was recorded in DB, refetching would show it
+            showToast(`Failed to create ticket: ${err.message}`, 'error');
             refetch();
         } finally {
             setIsCreatingProject(false);
         }
+    };
+
+    const handleBulkSync = async () => {
+        const idsToSync = Array.from(selectedIds);
+        if (idsToSync.length === 0 || isBulkSyncing || isCreatingProject) return; // Safety Lock
+
+        setIsBulkSyncing(true);
+        showToast(`Starting Bulk Sync of ${idsToSync.length} items...`);
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const id of idsToSync) {
+            try {
+                // Find row data from local state if needed OR just pass ID
+                await createOdooProject(id);
+                successCount++;
+            } catch (err) {
+                console.error(`Sync failed for ${id}:`, err);
+                failCount++;
+            }
+        }
+
+        setSelectedIds(new Set());
+        refetch();
+        setIsBulkSyncing(false);
+
+        if (failCount === 0) {
+            showToast(`Bulk Sync Complete! ${successCount} tickets successfully created.`);
+        } else {
+            showToast(`${successCount} Succeeded, ${failCount} Failed.`, 'error');
+        }
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === rows.length) {
+            setSelectedIds(new Set());
+        } else {
+            const news = new Set(rows.map(r => r.declaration_id));
+            setSelectedIds(news);
+        }
+    };
+
+    const toggleSelectRow = (id) => {
+        const news = new Set(selectedIds);
+        if (news.has(id)) news.delete(id);
+        else news.add(id);
+        setSelectedIds(news);
     };
 
     const handleFilterChange = (e) => {
@@ -106,23 +209,45 @@ const DeclarationsList = () => {
         );
     }
 
-    const { data: rows = [], pagination } = data || {};
+    const { data: rowsData = [], pagination: rowsPagination } = data || {};
 
-
+    // Calculate Stats (Current Page View)
+    const stats = {
+        unsynced: rows.filter(r => r.odoo_status === 'NEW').length,
+        failed: rows.filter(r => r.odoo_status === 'FAILED').length,
+        created: rows.filter(r => r.odoo_status === 'CREATED').length,
+        today: rows.filter(r => {
+            const today = new Date().toISOString().split('T')[0];
+            return r.date_of_acceptance?.startsWith(today);
+        }).length
+    };
 
     return (
         <div className="min-h-screen bg-gray-50/50 p-4">
             <div className="w-full space-y-4">
 
                 {/* Header */}
-                <div className="flex justify-between items-center bg-white p-4 border border-gray-200 rounded-md shadow-sm">
+                <div className="flex justify-between items-end">
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">Fiscal Declarations</h1>
                         <p className="text-xs text-gray-500 mt-1">Manage and track incoming declarations from Odoo/StreamSoftware</p>
                     </div>
-                    <button onClick={refetch} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors" title="Refresh Data">
-                        <RefreshCw className="w-4 h-4" />
-                    </button>
+
+                    {/* 📊 Quick Stats Dashboard */}
+                    <div className="flex gap-4">
+                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Unsynced</p>
+                            <p className="text-lg font-bold text-blue-600">{stats.unsynced}</p>
+                        </div>
+                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Failed Icons</p>
+                            <p className="text-lg font-bold text-red-600">{stats.failed}</p>
+                        </div>
+                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Accepted Today</p>
+                            <p className="text-lg font-bold text-green-600">{stats.today}</p>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Filters Bar */}
@@ -197,7 +322,27 @@ const DeclarationsList = () => {
                         </div>
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                            {selectedIds.size > 0 && (
+                                <button
+                                    onClick={handleBulkSync}
+                                    disabled={isBulkSyncing}
+                                    className="bg-[#714B67] text-white px-4 py-1.5 rounded-md text-xs font-bold shadow-md hover:bg-[#5a3c52] transition-all flex items-center gap-2"
+                                >
+                                    {isBulkSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                    Sync Selected ({selectedIds.size})
+                                </button>
+                            )}
+                            {selectedIds.size > 0 && (
+                                <button
+                                    onClick={() => setSelectedIds(new Set())}
+                                    className="text-gray-500 text-xs hover:underline"
+                                >
+                                    Cancel Selection
+                                </button>
+                            )}
+                        </div>
                         <button
                             onClick={clearFilters}
                             className="text-xs text-gray-500 hover:text-primary transition-colors hover:underline"
@@ -211,22 +356,30 @@ const DeclarationsList = () => {
                 <div className="bg-white rounded-md border border-gray-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left border-collapse">
-                            <thead className="bg-gray-100 text-gray-600 uppercase font-semibold text-xs border-b border-gray-200">
+                            <thead className="bg-gray-50 text-gray-400 uppercase font-bold text-[9px] border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 whitespace-nowrap">Declaration ID</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">Date</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">Principal</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">Importer</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">MRN</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">Commercial Ref</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">Status</th>
-                                    <th className="px-4 py-3 text-right">Actions</th>
+                                    <th className="px-3 py-2 w-10">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-gray-300 text-[#714B67] focus:ring-[#714B67]"
+                                            checked={rows.length > 0 && selectedIds.size === rows.length}
+                                            onChange={toggleSelectAll}
+                                        />
+                                    </th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Declaration ID</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Date</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Principal</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Importer</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">MRN</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Commercial Ref</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Status</th>
+                                    <th className="px-3 py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                                 {rows.length === 0 ? (
                                     <tr>
-                                        <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                                        <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
                                             <div className="flex flex-col items-center">
                                                 <FileText className="w-10 h-10 text-gray-300 mb-2" />
                                                 <p>No declarations found matching your filters.</p>
@@ -234,48 +387,101 @@ const DeclarationsList = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    rows.map((row) => (
+                                    rows.map((row, index) => (
                                         <tr
                                             key={row.declaration_id}
-                                            className="hover:bg-blue-50/50 transition-colors group cursor-pointer"
-                                            onClick={() => setSelectedDeclaration(row)}
+                                            className={`transition-colors group cursor-pointer border-b border-gray-100 last:border-0 ${focusedIndex === index ? 'bg-violet-50/80 ring-1 ring-inset ring-violet-200' : 'hover:bg-gray-50/50'
+                                                } ${selectedIds.has(row.declaration_id) ? 'bg-[#714B67]/5' : ''}`}
+                                            onClick={() => {
+                                                setFocusedIndex(index);
+                                                setSelectedDeclaration(row);
+                                            }}
                                         >
-                                            <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                                            <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-[#714B67] focus:ring-[#714B67] w-3.5 h-3.5"
+                                                    checked={selectedIds.has(row.declaration_id)}
+                                                    onChange={() => toggleSelectRow(row.declaration_id)}
+                                                />
+                                            </td>
+                                            <td
+                                                className="px-3 py-1.5 font-mono text-[11px] text-[#714B67] hover:underline cursor-copy font-bold"
+                                                onClick={(e) => { e.stopPropagation(); handleCopy(row.declaration_id, 'Declaration ID'); }}
+                                                title="Click to copy ID"
+                                            >
                                                 {row.declaration_id}
                                             </td>
-                                            <td className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                                            <td className="px-3 py-1.5 text-gray-900 whitespace-nowrap text-xs">
                                                 {row.date_of_acceptance ? new Date(row.date_of_acceptance).toLocaleDateString() : '-'}
                                             </td>
-                                            <td className="px-4 py-3 font-medium text-gray-900 truncate max-w-[150px]" title={row.principal || ''}>
+                                            <td className="px-3 py-1.5 font-medium text-gray-900 truncate max-w-[150px] text-xs" title={row.principal || ''}>
                                                 {row.principal || '-'}
                                             </td>
-                                            <td className="px-4 py-3 text-gray-600 truncate max-w-[150px]" title={row.importer_code || ''}>
+                                            <td className="px-3 py-1.5 text-gray-600 truncate max-w-[150px] text-xs" title={row.importer_code || ''}>
                                                 {row.importer_code || '-'}
                                             </td>
-                                            <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{row.mrn || '-'}</td>
-                                            <td className="px-4 py-3 text-xs text-gray-500 truncate max-w-[120px]" title={row.commercial_reference || ''}>
+                                            <td
+                                                className="px-3 py-1.5 font-mono text-[10px] text-gray-400 whitespace-nowrap hover:text-gray-600 cursor-copy"
+                                                onClick={(e) => { e.stopPropagation(); handleCopy(row.mrn, 'MRN'); }}
+                                                title="Click to copy MRN"
+                                            >
+                                                {row.mrn || '-'}
+                                            </td>
+                                            <td
+                                                className="px-3 py-1.5 text-[11px] text-gray-500 truncate max-w-[120px] hover:text-gray-700 cursor-copy"
+                                                onClick={(e) => { e.stopPropagation(); handleCopy(row.commercial_reference, 'Reference'); }}
+                                                title="Click to copy Reference"
+                                            >
                                                 {row.commercial_reference || '-'}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium border ${row.odoo_status === 'NEW' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                    row.odoo_status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                        row.odoo_status === 'CREATED' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                            'bg-red-50 text-red-700 border-red-200'
+                                            <td className="px-3 py-1.5">
+                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold border ${row.odoo_status === 'NEW' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                    row.odoo_status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                                        row.odoo_status === 'CREATED' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                            'bg-red-50 text-red-700 border-red-100'
                                                     }`}>
                                                     {row.odoo_status}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <td className="px-3 py-1.5 text-right">
+                                                <div className="flex justify-end gap-1.5 items-center">
+                                                    {row.odoo_status === 'NEW' && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleCreateProject(row);
+                                                            }}
+                                                            disabled={isCreatingProject || isBulkSyncing}
+                                                            className="bg-[#714B67] hover:bg-[#5a3c52] disabled:opacity-50 disabled:cursor-not-allowed text-white text-[10px] font-bold py-1 px-3 rounded-[3px] transition-colors shadow-sm flex items-center justify-center min-w-[80px]"
+                                                        >
+                                                            {isCreatingProject && selectedDeclaration?.declaration_id === row.declaration_id ? (
+                                                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                                            ) : (
+                                                                'Sync Odoo'
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                    {row.odoo_status === 'CREATED' && (
+                                                        <a
+                                                            href={`https://dkm-customs.odoo.com/odoo/helpdesk/5/tickets/${row.odoo_project_id}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-[#714B67] border border-[#714B67] hover:bg-[#714B67] hover:text-white text-[10px] font-bold py-1 px-3 rounded-[3px] transition-all"
+                                                        >
+                                                            View Ticket
+                                                        </a>
+                                                    )}
                                                     <button
-                                                        className="text-gray-400 hover:text-primary transition-colors p-1"
+                                                        className="text-gray-400 hover:text-[#714B67] transition-colors p-1"
                                                         title="View Details"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setSelectedDeclaration(row);
                                                         }}
                                                     >
-                                                        <Eye className="w-4 h-4" />
+                                                        <Eye className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
                                             </td>
@@ -478,6 +684,29 @@ const DeclarationsList = () => {
                                     </button>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Toast Notification */}
+            {toast.show && (
+                <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-right duration-300">
+                    <div className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-2xl border ${toast.type === 'success'
+                        ? 'bg-white border-green-500 text-green-800'
+                        : 'bg-white border-red-500 text-red-800'
+                        }`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${toast.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+                            }`}>
+                            {toast.type === 'success' ? (
+                                <RefreshCw className="w-4 h-4 text-green-600" />
+                            ) : (
+                                <AlertCircle className="w-4 h-4 text-red-600" />
+                            )}
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold">{toast.type === 'success' ? 'Success' : 'Error'}</p>
+                            <p className="text-xs opacity-80">{toast.message}</p>
                         </div>
                     </div>
                 </div>
