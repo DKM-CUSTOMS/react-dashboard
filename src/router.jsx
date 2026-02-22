@@ -17,6 +17,7 @@ import ArrivalsTable from './pages/arrivals/ArrivalsTable';
 import OutboundsTable from './pages/arrivals/OutboundsTable.jsx';
 import SendingFiscal from './pages/fiscal-representation/SendingFiscal';
 import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
+import DocumentRequest from './pages/fiscal-representation/DocumentRequest'; // Added
 import RequireRole from './components/auth/RequireRole';
 
 const withAccess = (element, allowedRoles) => (
@@ -77,6 +78,7 @@ const router = createBrowserRouter([
       { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
+      { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added
     ],
     errorElement: <NotFound />,
   },

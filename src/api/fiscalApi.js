@@ -101,3 +101,45 @@ export async function deletePrincipal(name) {
     throw error;
   }
 }
+/**
+ * Request generation and emailing of fiscal documents (Debenotes)
+ * @param {string[]} declarationIds - Array of declaration IDs (as strings)
+ * @returns {Promise<Object>} Response from the Logic App
+ */
+export async function requestFiscalDocuments(declarationIds) {
+  // Use VITE_LOGIC_APP_DEBENOTE_URL from environment variables
+  // If not found, use a placeholder or the URL provided by the user in the prompt (if any)
+  const url = import.meta.env.VITE_LOGIC_APP_DEBENOTE_URL || "https://prod-XYZ.westeurope.logic.azure.com:443/workflows/YOUR_GUID/triggers/manual/paths/invoke?api-version=2016-10-01";
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ declarationIds }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        status: data.status || 'error',
+        message: data.message || `Request failed with status ${response.status}`,
+        ok: false,
+        statusCode: response.status
+      };
+    }
+
+    return {
+      ...data,
+      ok: true,
+      statusCode: response.status
+    };
+  } catch (error) {
+    console.error('Error requesting fiscal documents:', error);
+    return {
+      status: 'error',
+      message: error.message || 'Network error occurred',
+      ok: false
+    };
+  }
+}

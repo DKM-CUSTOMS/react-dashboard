@@ -116,6 +116,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       subtitles: [
         { label: 'Declarations', path: '/fiscal/declarations' },
         { label: 'Principals', path: '/fiscal/sending' },
+        { label: 'DebetNote generator', path: '/fiscal/generate-documents' },
       ],
       hasSubmenu: true,
     },
