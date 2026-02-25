@@ -181,14 +181,28 @@ class HelpdeskService {
     }
 }
 
-// Singleton instances using environment variables
-const ODOO_URL = process.env.ODOO_URL || 'https://dkm-customs.odoo.com';
-const DB = process.env.ODOO_DB || 'vva-onniti-dkm-main-20654023';
-const USERNAME = process.env.ODOO_USERNAME || 'anas.benabbou@dkm-customs.com';
-const PASSWORD = process.env.ODOO_API_KEY || 'bba4286ed745fb6915057a5393c640fe6402a168';
+// Lazy-initialized singletons (env vars may not be available at import time)
+let odooClient = null;
+let helpdeskService = null;
 
-const odooClient = new OdooClient(ODOO_URL, DB, USERNAME, PASSWORD);
-const helpdeskService = new HelpdeskService(odooClient);
+const getHelpdeskService = () => {
+    if (!helpdeskService) {
+        const url = process.env.ODOO_URL;
+        const db = process.env.ODOO_DB;
+        const username = process.env.ODOO_USERNAME;
+        const apiKey = process.env.ODOO_API_KEY;
+
+        console.log(`🔧 Initializing Odoo Client — URL: ${url ? '✅' : '❌ MISSING'}, DB: ${db ? '✅' : '❌ MISSING'}, User: ${username ? '✅' : '❌ MISSING'}, Key: ${apiKey ? '✅ (hidden)' : '❌ MISSING'}`);
+
+        if (!url || !db || !username || !apiKey) {
+            throw new Error(`Missing Odoo environment variables. URL=${!!url}, DB=${!!db}, USER=${!!username}, KEY=${!!apiKey}`);
+        }
+
+        odooClient = new OdooClient(url, db, username, apiKey);
+        helpdeskService = new HelpdeskService(odooClient);
+    }
+    return helpdeskService;
+};
 
 /**
  * Parses the structured 'odoo_body' string into key-value pairs for HTML display
@@ -310,7 +324,8 @@ export const createOdooTicket = async (declaration) => {
         // Create a structured and clean ticket subject
         const ticketSubject = `[#${declaration.declaration_id}] | ${declaration.commercial_reference || 'NOREF'} | ${declaration.principal || 'NO_PRINCIPAL'}`.toUpperCase();
 
-        const ticketId = await helpdeskService.createTicket({
+        const svc = getHelpdeskService();
+        const ticketId = await svc.createTicket({
             name: ticketSubject,
             description: htmlDescription,
             teamName: 'CMR-FISCAL REPRESENTATION',
@@ -324,4 +339,7 @@ export const createOdooTicket = async (declaration) => {
     }
 };
 
-export const authenticate = () => odooClient.authenticate();
+export const authenticate = () => {
+    const svc = getHelpdeskService();
+    return svc.client.authenticate();
+};

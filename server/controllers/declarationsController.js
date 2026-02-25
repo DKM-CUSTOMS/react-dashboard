@@ -1,6 +1,19 @@
 
 import { getDbConnection } from '../config/db.js';
 
+// Allowed sort columns (whitelist to prevent SQL injection)
+const ALLOWED_SORT_COLUMNS = {
+  'declaration_id': 'declaration_id',
+  'date_of_acceptance': 'date_of_acceptance',
+  'principal': 'principal',
+  'importer_code': 'importer_code',
+  'mrn': 'mrn',
+  'commercial_reference': 'commercial_reference',
+  'odoo_status': 'odoo_status',
+  'first_seen_at': 'first_seen_at',
+  'last_seen_at': 'last_seen_at',
+};
+
 // GET /api/declarations
 export const getDeclarations = async (req, res) => {
   // MOCK MODE for Local Development
@@ -53,13 +66,36 @@ export const getDeclarations = async (req, res) => {
 
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 50;
+    const search = (req.query.search || '').toLowerCase().trim();
+    const sortBy = req.query.sortBy || 'declaration_id';
+    const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
 
-    // Simple mock filtering
+    // Mock filtering
     let filtered = mockData.filter(item => {
       if (req.query.status && item.odoo_status !== req.query.status) return false;
       if (req.query.principal && !item.principal.includes(req.query.principal)) return false;
       if (req.query.importer && !item.importer_code.includes(req.query.importer)) return false;
+      // Global search across all fields
+      if (search) {
+        const searchFields = [
+          String(item.declaration_id || ''),
+          item.principal || '',
+          item.importer_code || '',
+          item.mrn || '',
+          item.commercial_reference || '',
+          item.mail_subject || '',
+        ].map(f => f.toLowerCase());
+        if (!searchFields.some(f => f.includes(search))) return false;
+      }
       return true;
+    });
+
+    // Mock sorting
+    filtered.sort((a, b) => {
+      const valA = a[sortBy] ?? '';
+      const valB = b[sortBy] ?? '';
+      const cmp = typeof valA === 'number' ? valA - valB : String(valA).localeCompare(String(valB));
+      return sortOrder === 'asc' ? cmp : -cmp;
     });
 
     const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -81,7 +117,7 @@ export const getDeclarations = async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 50;
     const offset = (page - 1) * pageSize;
 
-    const { from, to, status, principal, importer } = req.query;
+    const { from, to, status, principal, importer, search, sortBy, sortOrder } = req.query;
 
     let baseQuery = "FROM fr_section_declarations WHERE 1=1";
     const params = [];
@@ -107,17 +143,33 @@ export const getDeclarations = async (req, res) => {
       params.push(`%${importer}%`);
     }
 
+    // Global search across multiple columns
+    if (search && search.trim()) {
+      baseQuery += ` AND (
+        CAST(declaration_id AS CHAR) LIKE ?
+        OR principal LIKE ?
+        OR importer_code LIKE ?
+        OR mrn LIKE ?
+        OR commercial_reference LIKE ?
+        OR mail_subject LIKE ?
+      )`;
+      const searchTerm = `%${search.trim()}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
     connection = await getDbConnection();
 
     // 1. Get Total Count
     const [countRows] = await connection.execute(`SELECT COUNT(*) as total ${baseQuery}`, params);
     const total = countRows[0].total;
 
-    // 2. Get Data
-    // Use interpolation for LIMIT/OFFSET to avoid prepared statement issues (safe because we parseInt'ed them)
-    const dataQuery = `SELECT * ${baseQuery} ORDER BY date_of_acceptance DESC LIMIT ${pageSize} OFFSET ${offset}`;
+    // 2. Determine sort column (whitelist to prevent injection)
+    const sortColumn = ALLOWED_SORT_COLUMNS[sortBy] || 'declaration_id';
+    const order = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-    // Use .query() instead of .execute() for better compatibility with dynamic queries
+    // 3. Get Data
+    const dataQuery = `SELECT * ${baseQuery} ORDER BY ${sortColumn} ${order} LIMIT ${pageSize} OFFSET ${offset}`;
+
     const [rows] = await connection.query(dataQuery, params);
 
     res.json({

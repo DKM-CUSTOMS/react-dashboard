@@ -1,56 +1,110 @@
 
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search,
     Calendar,
-    Filter,
     RefreshCw,
     AlertCircle,
     FileText,
-    ChevronLeft,
-    ChevronRight,
     Eye,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
+    X,
 } from 'lucide-react';
 import { getDeclarations, createOdooProject } from '../../api/declarationsApi';
+
+// ─── Debounce Hook ────────────────────────────────────────────
+const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+    return debouncedValue;
+};
+
+// ─── Sort Icon Component ──────────────────────────────────────
+const SortIcon = ({ column, currentSort, currentOrder }) => {
+    if (currentSort !== column) return <ArrowUpDown className="w-3 h-3 opacity-30 ml-1 inline" />;
+    return currentOrder === 'asc'
+        ? <ArrowUp className="w-3 h-3 text-[#714B67] ml-1 inline" />
+        : <ArrowDown className="w-3 h-3 text-[#714B67] ml-1 inline" />;
+};
+
+// ─── Column Config ────────────────────────────────────────────
+const COLUMNS = [
+    { key: 'declaration_id', label: 'Declaration ID', sortable: true },
+    { key: 'date_of_acceptance', label: 'Date', sortable: true },
+    { key: 'principal', label: 'Principal', sortable: true },
+    { key: 'importer_code', label: 'Importer', sortable: true },
+    { key: 'mrn', label: 'MRN', sortable: true },
+    { key: 'commercial_reference', label: 'Commercial Ref', sortable: true },
+    { key: 'odoo_status', label: 'Status', sortable: true },
+];
 
 const DeclarationsList = () => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(50);
     const [filters, setFilters] = useState({
-        status: 'NEW', // Default to showing only "NEW" (Not in Odoo)
-        principal: '',
-        importer: '',
+        status: 'NEW',
         from: '',
         to: ''
     });
 
+    // Search & Sort State
+    const [searchInput, setSearchInput] = useState('');
+    const debouncedSearch = useDebounce(searchInput, 300);
+    const [sortBy, setSortBy] = useState('declaration_id');
+    const [sortOrder, setSortOrder] = useState('desc');
+
+    // UI State
     const [selectedDeclaration, setSelectedDeclaration] = useState(null);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-
-    // New Feature States
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [focusedIndex, setFocusedIndex] = useState(-1);
     const [isBulkSyncing, setIsBulkSyncing] = useState(false);
+    const searchInputRef = useRef(null);
 
     const showToast = (message, type = 'success') => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
     };
 
-    const { data, isLoading, isError, error, refetch } = useQuery({
-        queryKey: ['declarations', page, pageSize, filters],
-        queryFn: () => getDeclarations({ page, pageSize, filters }),
-        keepPreviousData: true,
+    // ─── Data Fetching with Caching ───────────────────────────
+    const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+        queryKey: ['declarations', page, pageSize, filters, debouncedSearch, sortBy, sortOrder],
+        queryFn: () => getDeclarations({ page, pageSize, filters, search: debouncedSearch, sortBy, sortOrder }),
+        placeholderData: keepPreviousData,  // v5: keeps previous results visible while fetching new ones
+        staleTime: 60 * 60 * 1000,          // 1 hour: data considered fresh
+        gcTime: 2 * 60 * 60 * 1000,         // 2 hours: cache kept in memory
+        refetchOnWindowFocus: false,
     });
 
     const { data: rows = [], pagination } = data || {};
 
-    // ⚡ Keyboard Navigation Logic
-    React.useEffect(() => {
+    // Reset page on filter/search change
+    useEffect(() => { setPage(1); }, [debouncedSearch, filters]);
+
+    // ─── Sort Handler ─────────────────────────────────────────
+    const handleSort = useCallback((column) => {
+        if (sortBy === column) {
+            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(column);
+            setSortOrder('desc');
+        }
+    }, [sortBy]);
+
+    // ─── Keyboard Navigation ─────────────────────────────────
+    useEffect(() => {
         const handleKeyDown = (e) => {
-            if (selectedDeclaration) return; // Ignore if modal is open
+            // Don't capture keys if search input is focused
+            if (document.activeElement === searchInputRef.current) return;
+            if (selectedDeclaration) return;
 
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -59,17 +113,16 @@ const DeclarationsList = () => {
                 e.preventDefault();
                 setFocusedIndex(prev => Math.max(prev - 1, 0));
             } else if (e.key === 'Enter') {
-                if (focusedIndex >= 0) {
-                    setSelectedDeclaration(rows[focusedIndex]);
-                }
-            } else if (e.key === ' ') { // Space
+                if (focusedIndex >= 0) setSelectedDeclaration(rows[focusedIndex]);
+            } else if (e.key === ' ') {
                 e.preventDefault();
-                if (focusedIndex >= 0) {
-                    const row = rows[focusedIndex];
-                    if (row.odoo_status === 'NEW') {
-                        handleCreateProject(row);
-                    }
+                if (focusedIndex >= 0 && rows[focusedIndex]?.odoo_status === 'NEW') {
+                    handleCreateProject(rows[focusedIndex]);
                 }
+            } else if (e.key === '/' || (e.ctrlKey && e.key === 'k')) {
+                // Focus search on / or Ctrl+K
+                e.preventDefault();
+                searchInputRef.current?.focus();
             }
         };
 
@@ -77,6 +130,7 @@ const DeclarationsList = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [rows, focusedIndex, selectedDeclaration]);
 
+    // ─── Handlers ─────────────────────────────────────────────
     const handleCopy = (text, label) => {
         if (!text) return;
         navigator.clipboard.writeText(text);
@@ -85,16 +139,12 @@ const DeclarationsList = () => {
 
     const handleCreateProject = async (targetDeclaration = null) => {
         const declaration = targetDeclaration || selectedDeclaration;
-        if (!declaration || isCreatingProject || isBulkSyncing) return; // Safety Lock
+        if (!declaration || isCreatingProject || isBulkSyncing) return;
 
         setIsCreatingProject(true);
         try {
             const result = await createOdooProject(declaration.declaration_id);
-
-            // 1. Update main list view through refetch (or manual state update if needed)
             refetch();
-
-            // 2. If the synced declaration is what we are looking at in the modal, update it
             if (selectedDeclaration && selectedDeclaration.declaration_id === declaration.declaration_id) {
                 setSelectedDeclaration(prev => ({
                     ...prev,
@@ -103,7 +153,6 @@ const DeclarationsList = () => {
                     odoo_error: null
                 }));
             }
-
             showToast(`Ticket #${result.odoo_project_id} Created Successfully!`);
         } catch (err) {
             console.error(err);
@@ -116,7 +165,7 @@ const DeclarationsList = () => {
 
     const handleBulkSync = async () => {
         const idsToSync = Array.from(selectedIds);
-        if (idsToSync.length === 0 || isBulkSyncing || isCreatingProject) return; // Safety Lock
+        if (idsToSync.length === 0 || isBulkSyncing || isCreatingProject) return;
 
         setIsBulkSyncing(true);
         showToast(`Starting Bulk Sync of ${idsToSync.length} items...`);
@@ -126,7 +175,6 @@ const DeclarationsList = () => {
 
         for (const id of idsToSync) {
             try {
-                // Find row data from local state if needed OR just pass ID
                 await createOdooProject(id);
                 successCount++;
             } catch (err) {
@@ -150,45 +198,40 @@ const DeclarationsList = () => {
         if (selectedIds.size === rows.length) {
             setSelectedIds(new Set());
         } else {
-            const news = new Set(rows.map(r => r.declaration_id));
-            setSelectedIds(news);
+            setSelectedIds(new Set(rows.map(r => r.declaration_id)));
         }
     };
 
     const toggleSelectRow = (id) => {
-        const news = new Set(selectedIds);
-        if (news.has(id)) news.delete(id);
-        else news.add(id);
-        setSelectedIds(news);
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
     };
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
-        setPage(1); // Reset to page 1 on filter change
     };
 
     const clearFilters = () => {
-        setFilters({
-            status: '',
-            principal: '',
-            importer: '',
-            from: '',
-            to: ''
-        });
+        setFilters({ status: '', from: '', to: '' });
+        setSearchInput('');
         setPage(1);
     };
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'NEW': return 'bg-blue-100 text-blue-800';
-            case 'PENDING': return 'bg-yellow-100 text-yellow-800';
-            case 'CREATED': return 'bg-green-100 text-green-800';
-            case 'FAILED': return 'bg-red-100 text-red-800';
-            default: return 'bg-gray-100 text-gray-800';
-        }
-    };
+    // ─── Stats ────────────────────────────────────────────────
+    const stats = useMemo(() => ({
+        unsynced: rows.filter(r => r.odoo_status === 'NEW').length,
+        failed: rows.filter(r => r.odoo_status === 'FAILED').length,
+        created: rows.filter(r => r.odoo_status === 'CREATED').length,
+        today: rows.filter(r => {
+            const today = new Date().toISOString().split('T')[0];
+            return r.date_of_acceptance?.startsWith(today);
+        }).length
+    }), [rows]);
 
+    // ─── Loading State ────────────────────────────────────────
     if (isLoading) {
         return (
             <div className="flex justify-center items-center h-96">
@@ -209,85 +252,75 @@ const DeclarationsList = () => {
         );
     }
 
-    const { data: rowsData = [], pagination: rowsPagination } = data || {};
-
-    // Calculate Stats (Current Page View)
-    const stats = {
-        unsynced: rows.filter(r => r.odoo_status === 'NEW').length,
-        failed: rows.filter(r => r.odoo_status === 'FAILED').length,
-        created: rows.filter(r => r.odoo_status === 'CREATED').length,
-        today: rows.filter(r => {
-            const today = new Date().toISOString().split('T')[0];
-            return r.date_of_acceptance?.startsWith(today);
-        }).length
-    };
+    const hasActiveFilters = filters.status || filters.from || filters.to || searchInput;
 
     return (
         <div className="min-h-screen bg-gray-50/50 p-4">
             <div className="w-full space-y-4">
 
-                {/* Header */}
+                {/* ─── Header + Stats ─── */}
                 <div className="flex justify-between items-end">
                     <div>
                         <h1 className="text-xl font-bold text-gray-900">Fiscal Declarations</h1>
                         <p className="text-xs text-gray-500 mt-1">Manage and track incoming declarations from Odoo/StreamSoftware</p>
                     </div>
-
-                    {/* 📊 Quick Stats Dashboard */}
-                    <div className="flex gap-4">
+                    <div className="flex gap-3 items-end">
                         <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Unsynced</p>
                             <p className="text-lg font-bold text-blue-600">{stats.unsynced}</p>
                         </div>
                         <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Failed Icons</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Failed</p>
                             <p className="text-lg font-bold text-red-600">{stats.failed}</p>
                         </div>
                         <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Accepted Today</p>
                             <p className="text-lg font-bold text-green-600">{stats.today}</p>
                         </div>
+                        {/* Refresh button with cache indicator */}
+                        <button
+                            onClick={() => refetch()}
+                            className="p-2.5 text-gray-400 hover:text-[#714B67] hover:bg-gray-100 rounded-md transition-all border border-gray-200 bg-white shadow-sm"
+                            title="Force Refresh (bypass cache)"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin text-[#714B67]' : ''}`} />
+                        </button>
                     </div>
                 </div>
 
-                {/* Filters Bar */}
-                <div className="bg-white p-4 rounded-md border border-gray-200 shadow-sm space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-
-                        {/* Search Principal */}
+                {/* ─── Global Search Bar ─── */}
+                <div className="bg-white rounded-md border border-gray-200 shadow-sm">
+                    <div className="p-3 border-b border-gray-100">
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
+                                ref={searchInputRef}
                                 type="text"
-                                name="principal"
-                                value={filters.principal}
-                                onChange={handleFilterChange}
-                                placeholder="Principal..."
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                placeholder="Search across all fields... (ID, Principal, Importer, MRN, Reference, Subject)  |  Press / to focus"
+                                className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-md text-sm focus:ring-2 focus:ring-[#714B67]/20 focus:border-[#714B67] outline-none transition-all bg-gray-50/50 placeholder:text-gray-400"
                             />
+                            {searchInput && (
+                                <button
+                                    onClick={() => setSearchInput('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
+                    </div>
 
-                        {/* Search Importer */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="text"
-                                name="importer"
-                                value={filters.importer}
-                                onChange={handleFilterChange}
-                                placeholder="Importer Code..."
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
-                            />
-                        </div>
-
+                    {/* ─── Filters Row ─── */}
+                    <div className="px-3 py-2 flex flex-wrap gap-2 items-center">
                         {/* Status Dropdown */}
                         <div className="relative">
-                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                             <select
                                 name="status"
                                 value={filters.status}
                                 onChange={handleFilterChange}
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none appearance-none bg-white"
+                                className="pl-3 pr-7 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-[#714B67] focus:border-[#714B67] outline-none appearance-none bg-white font-medium text-gray-700"
                             >
                                 <option value="">All Statuses</option>
                                 <option value="NEW">New</option>
@@ -297,66 +330,63 @@ const DeclarationsList = () => {
                             </select>
                         </div>
 
-                        {/* Date Range - From */}
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="date"
-                                name="from"
-                                value={filters.from}
-                                onChange={handleFilterChange}
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
-                            />
-                        </div>
+                        {/* Date From */}
+                        <input
+                            type="date"
+                            name="from"
+                            value={filters.from}
+                            onChange={handleFilterChange}
+                            className="px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-[#714B67] focus:border-[#714B67] outline-none"
+                        />
 
-                        {/* Date Range - To */}
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input
-                                type="date"
-                                name="to"
-                                value={filters.to}
-                                onChange={handleFilterChange}
-                                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
-                            />
-                        </div>
-                    </div>
+                        {/* Date To */}
+                        <input
+                            type="date"
+                            name="to"
+                            value={filters.to}
+                            onChange={handleFilterChange}
+                            className="px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-[#714B67] focus:border-[#714B67] outline-none"
+                        />
 
-                    <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                            {selectedIds.size > 0 && (
+                        <div className="flex-1" />
+
+                        {/* Bulk Sync */}
+                        {selectedIds.size > 0 && (
+                            <>
                                 <button
                                     onClick={handleBulkSync}
                                     disabled={isBulkSyncing}
-                                    className="bg-[#714B67] text-white px-4 py-1.5 rounded-md text-xs font-bold shadow-md hover:bg-[#5a3c52] transition-all flex items-center gap-2"
+                                    className="bg-[#714B67] text-white px-3 py-1.5 rounded text-xs font-bold shadow-sm hover:bg-[#5a3c52] transition-all flex items-center gap-1.5"
                                 >
                                     {isBulkSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                    Sync Selected ({selectedIds.size})
+                                    Sync ({selectedIds.size})
                                 </button>
-                            )}
-                            {selectedIds.size > 0 && (
-                                <button
-                                    onClick={() => setSelectedIds(new Set())}
-                                    className="text-gray-500 text-xs hover:underline"
-                                >
-                                    Cancel Selection
+                                <button onClick={() => setSelectedIds(new Set())} className="text-gray-400 text-xs hover:underline">
+                                    Cancel
                                 </button>
-                            )}
-                        </div>
-                        <button
-                            onClick={clearFilters}
-                            className="text-xs text-gray-500 hover:text-primary transition-colors hover:underline"
-                        >
-                            Clear Filters
-                        </button>
+                            </>
+                        )}
+
+                        {hasActiveFilters && (
+                            <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-[#714B67] transition-colors hover:underline">
+                                Clear All
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                {/* Data Table */}
-                <div className="bg-white rounded-md border border-gray-200 shadow-sm overflow-hidden">
+                {/* ─── Data Table ─── */}
+                <div className="bg-white rounded-md border border-gray-200 shadow-sm overflow-hidden relative">
+                    {/* Fetching indicator — smooth top progress bar */}
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 overflow-hidden transition-opacity duration-300 ${isFetching && !isLoading ? 'opacity-100' : 'opacity-0'}`}>
+                        <div className="h-full w-full bg-[#714B67]/20">
+                            <div className="h-full w-1/3 bg-[#714B67] rounded-full" style={{ animation: 'shimmer 1.2s ease-in-out infinite' }} />
+                        </div>
+                    </div>
+
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left border-collapse">
-                            <thead className="bg-gray-50 text-gray-400 uppercase font-bold text-[9px] border-b border-gray-200">
+                            <thead className="bg-gray-50 text-gray-400 uppercase font-bold text-[9px] border-b border-gray-200 select-none">
                                 <tr>
                                     <th className="px-3 py-2 w-10">
                                         <input
@@ -366,31 +396,44 @@ const DeclarationsList = () => {
                                             onChange={toggleSelectAll}
                                         />
                                     </th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Declaration ID</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Date</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Principal</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Importer</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">MRN</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Commercial Ref</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Status</th>
+                                    {COLUMNS.map(col => (
+                                        <th
+                                            key={col.key}
+                                            className={`px-3 py-2 whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-[#714B67] hover:bg-gray-100/50 transition-colors' : ''}`}
+                                            onClick={() => col.sortable && handleSort(col.key)}
+                                        >
+                                            <span className="flex items-center">
+                                                {col.label}
+                                                {col.sortable && <SortIcon column={col.key} currentSort={sortBy} currentOrder={sortOrder} />}
+                                            </span>
+                                        </th>
+                                    ))}
                                     <th className="px-3 py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
+                            <tbody className="divide-y divide-gray-100" style={{ transition: 'opacity 0.15s ease' }}>
                                 {rows.length === 0 ? (
                                     <tr>
                                         <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
-                                            <div className="flex flex-col items-center">
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 8 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="flex flex-col items-center"
+                                            >
                                                 <FileText className="w-10 h-10 text-gray-300 mb-2" />
-                                                <p>No declarations found matching your filters.</p>
-                                            </div>
+                                                <p className="font-medium">No declarations found</p>
+                                                <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>
+                                            </motion.div>
                                         </td>
                                     </tr>
                                 ) : (
                                     rows.map((row, index) => (
-                                        <tr
+                                        <motion.tr
                                             key={row.declaration_id}
-                                            className={`transition-colors group cursor-pointer border-b border-gray-100 last:border-0 ${focusedIndex === index ? 'bg-violet-50/80 ring-1 ring-inset ring-violet-200' : 'hover:bg-gray-50/50'
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            transition={{ duration: 0.15, delay: index * 0.01 }}
+                                            className={`transition-colors group cursor-pointer border-b border-gray-50 last:border-0 ${focusedIndex === index ? 'bg-violet-50/80 ring-1 ring-inset ring-violet-200' : 'hover:bg-gray-50/50'
                                                 } ${selectedIds.has(row.declaration_id) ? 'bg-[#714B67]/5' : ''}`}
                                             onClick={() => {
                                                 setFocusedIndex(index);
@@ -485,20 +528,24 @@ const DeclarationsList = () => {
                                                     </button>
                                                 </div>
                                             </td>
-                                        </tr>
+                                        </motion.tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
                     </div>
 
-                    {/* Pagination */}
+                    {/* ─── Pagination ─── */}
                     {pagination && (
                         <div className="px-4 py-2 border-t border-gray-200 flex items-center justify-between bg-gray-50/50">
                             <p className="text-xs text-gray-500">
-                                Showing <span className="font-medium">{(page - 1) * pageSize + 1}</span> to <span className="font-medium">{Math.min(page * pageSize, pagination.total)}</span> of <span className="font-medium">{pagination.total}</span>
+                                Showing <span className="font-medium">{rows.length === 0 ? 0 : (page - 1) * pageSize + 1}</span> to <span className="font-medium">{Math.min(page * pageSize, pagination.total)}</span> of <span className="font-medium">{pagination.total}</span>
+                                {debouncedSearch && <span className="ml-2 text-[#714B67]">• searching "{debouncedSearch}"</span>}
                             </p>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 items-center">
+                                <span className="text-[10px] text-gray-400 mr-2">
+                                    Page {page}/{pagination.totalPages || 1}
+                                </span>
                                 <button
                                     onClick={() => setPage(p => Math.max(1, p - 1))}
                                     disabled={page === 1}
@@ -508,7 +555,7 @@ const DeclarationsList = () => {
                                 </button>
                                 <button
                                     onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                                    disabled={page === pagination.totalPages}
+                                    disabled={page === pagination.totalPages || pagination.totalPages === 0}
                                     className="p-1 px-2 rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
                                 >
                                     Next
@@ -519,7 +566,7 @@ const DeclarationsList = () => {
                 </div>
             </div>
 
-            {/* Details Modal */}
+            {/* ─── Details Modal ─── */}
             {selectedDeclaration && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
@@ -532,10 +579,7 @@ const DeclarationsList = () => {
                                 onClick={() => setSelectedDeclaration(null)}
                                 className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
                             >
-                                <span className="sr-only">Close</span>
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
@@ -626,7 +670,7 @@ const DeclarationsList = () => {
                             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <div className="flex justify-between items-center mb-4">
                                     <div>
-                                        <h4 className="text-sm font-bold text-gray-900">Odoo Project Integration</h4>
+                                        <h4 className="text-sm font-bold text-gray-900">Odoo Ticket Integration</h4>
                                         <p className="text-xs text-gray-500 mt-0.5">
                                             Last Updated: {selectedDeclaration.odoo_updated_at ? new Date(selectedDeclaration.odoo_updated_at).toLocaleString() : 'Never'}
                                         </p>
@@ -667,19 +711,19 @@ const DeclarationsList = () => {
                                     </div>
                                 ) : (
                                     <button
-                                        className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                        onClick={handleCreateProject}
+                                        className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#714B67] hover:bg-[#5a3c52] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#714B67] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={() => handleCreateProject()}
                                         disabled={selectedDeclaration.odoo_status === 'PENDING' || isCreatingProject}
                                     >
                                         {isCreatingProject ? (
                                             <>
                                                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                                Creating Project...
+                                                Creating Ticket...
                                             </>
                                         ) : selectedDeclaration.odoo_status === 'PENDING' ? (
                                             'Syncing...'
                                         ) : (
-                                            'Create Odoo Project'
+                                            'Create Odoo Ticket'
                                         )}
                                     </button>
                                 )}
@@ -689,9 +733,9 @@ const DeclarationsList = () => {
                 </div>
             )}
 
-            {/* Custom Toast Notification */}
+            {/* ─── Toast Notification ─── */}
             {toast.show && (
-                <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-right duration-300">
+                <div className="fixed bottom-6 right-6 z-[100]" style={{ animation: 'slideInRight 0.3s ease-out' }}>
                     <div className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-2xl border ${toast.type === 'success'
                         ? 'bg-white border-green-500 text-green-800'
                         : 'bg-white border-red-500 text-red-800'
@@ -711,6 +755,18 @@ const DeclarationsList = () => {
                     </div>
                 </div>
             )}
+
+            {/* Inline animation keyframes */}
+            <style>{`
+                @keyframes slideInRight {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes shimmer {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(400%); }
+                }
+            `}</style>
         </div>
     );
 };
