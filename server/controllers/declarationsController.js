@@ -190,6 +190,39 @@ export const getDeclarations = async (req, res) => {
   }
 };
 
+// GET /api/declarations/stats
+export const getDeclarationStats = async (req, res) => {
+  if (process.env.USE_MOCK_DB === 'true') {
+    return res.json({
+      unsynced: 1,
+      failed: 0,
+      created: 1,
+      today: 2,
+      total: 2
+    });
+  }
+
+  let connection;
+  try {
+    connection = await getDbConnection();
+    const [rows] = await connection.execute(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN odoo_status = 'NEW' THEN 1 ELSE 0 END) as unsynced,
+        SUM(CASE WHEN odoo_status = 'FAILED' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN odoo_status = 'CREATED' THEN 1 ELSE 0 END) as created,
+        SUM(CASE WHEN DATE(date_of_acceptance) = CURDATE() THEN 1 ELSE 0 END) as today
+      FROM fr_section_declarations
+    `);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error fetching declaration stats:", err);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  } finally {
+    if (connection) await connection.end();
+  }
+};
+
 // GET /api/declarations/:id
 export const getDeclarationById = async (req, res) => {
   let connection;

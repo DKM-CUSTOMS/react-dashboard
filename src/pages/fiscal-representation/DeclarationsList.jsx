@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -78,11 +78,13 @@ const DeclarationsList = () => {
     const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
         queryKey: ['declarations', page, pageSize, filters, debouncedSearch, sortBy, sortOrder],
         queryFn: () => getDeclarations({ page, pageSize, filters, search: debouncedSearch, sortBy, sortOrder }),
-        placeholderData: keepPreviousData,  // v5: keeps previous results visible while fetching new ones
-        staleTime: 60 * 60 * 1000,          // 1 hour: data considered fresh
-        gcTime: 2 * 60 * 60 * 1000,         // 2 hours: cache kept in memory
+        placeholderData: keepPreviousData,
+        staleTime: 60 * 60 * 1000,
+        gcTime: 2 * 60 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
+
+
 
     const { data: rows = [], pagination } = data || {};
 
@@ -220,16 +222,8 @@ const DeclarationsList = () => {
         setPage(1);
     };
 
-    // ─── Stats ────────────────────────────────────────────────
-    const stats = useMemo(() => ({
-        unsynced: rows.filter(r => r.odoo_status === 'NEW').length,
-        failed: rows.filter(r => r.odoo_status === 'FAILED').length,
-        created: rows.filter(r => r.odoo_status === 'CREATED').length,
-        today: rows.filter(r => {
-            const today = new Date().toISOString().split('T')[0];
-            return r.date_of_acceptance?.startsWith(today);
-        }).length
-    }), [rows]);
+    // Stats are fetched from the dedicated /stats endpoint
+    // No local calculation needed — stats reflect the entire database
 
     // ─── Loading State ────────────────────────────────────────
     if (isLoading) {
@@ -265,21 +259,10 @@ const DeclarationsList = () => {
                         <p className="text-xs text-gray-500 mt-1">Manage and track incoming declarations from Odoo/StreamSoftware</p>
                     </div>
                     <div className="flex gap-3 items-end">
-                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Unsynced</p>
-                            <p className="text-lg font-bold text-blue-600">{stats.unsynced}</p>
-                        </div>
-                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Failed</p>
-                            <p className="text-lg font-bold text-red-600">{stats.failed}</p>
-                        </div>
-                        <div className="bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Accepted Today</p>
-                            <p className="text-lg font-bold text-green-600">{stats.today}</p>
-                        </div>
+
                         {/* Refresh button with cache indicator */}
                         <button
-                            onClick={() => refetch()}
+                            onClick={() => { refetch(); }}
                             className="p-2.5 text-gray-400 hover:text-[#714B67] hover:bg-gray-100 rounded-md transition-all border border-gray-200 bg-white shadow-sm"
                             title="Force Refresh (bypass cache)"
                         >

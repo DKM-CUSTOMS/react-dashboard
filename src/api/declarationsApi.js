@@ -47,3 +47,11 @@ export const createOdooProject = async (id) => {
   }
   return response.json();
 };
+
+export const getDeclarationStats = async () => {
+  const response = await fetch(`${BASE_URL}/stats`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch declaration stats');
+  }
+  return response.json();
+};

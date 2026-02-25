@@ -118,15 +118,7 @@ const SendingFiscal = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[80vh]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center">
-            <RefreshCw className="w-7 h-7 text-primary animate-spin" />
-          </div>
-          <div className="text-center">
-            <p className="text-text-primary font-medium text-sm">Loading principals</p>
-            <p className="text-text-muted text-xs mt-1">Connecting to Azure Storage...</p>
-          </div>
-        </div>
+        <RefreshCw className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
   }
@@ -190,19 +182,6 @@ const SendingFiscal = () => {
               <p className="text-[11px] text-text-muted font-medium uppercase tracking-wide">
                 {searchTerm ? 'Matching Results' : 'Active Principals'}
               </p>
-            </div>
-          </div>
-          <div className="bg-white border border-border rounded-xl p-4 flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isFetching ? 'bg-amber-50' : 'bg-gray-50'}`}>
-              {isFetching ? (
-                <RefreshCw className="w-5 h-5 text-amber-600 animate-spin" />
-              ) : (
-                <CheckCircle className="w-5 h-5 text-gray-400" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-bold text-text-primary">{isFetching ? 'Syncing...' : 'Synced'}</p>
-              <p className="text-[11px] text-text-muted font-medium uppercase tracking-wide">Azure Storage</p>
             </div>
           </div>
         </div>
@@ -317,9 +296,8 @@ const SendingFiscal = () => {
                   return (
                     <tr
                       key={name}
-                      className={`border-b border-gray-50 last:border-0 transition-all ${
-                        isEditing ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'
-                      }`}
+                      className={`border-b border-gray-50 last:border-0 transition-all ${isEditing ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'
+                        }`}
                     >
                       <td className="px-5 py-3">
                         <span className="text-[11px] text-text-muted font-mono">{String(index + 1).padStart(2, '0')}</span>
@@ -398,10 +376,6 @@ const SendingFiscal = () => {
             <div className="px-5 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
               <span className="text-[11px] text-text-muted">
                 {filtered.length} principal{filtered.length !== 1 ? 's' : ''} listed
-              </span>
-              <span className="text-[11px] text-text-muted flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                Stored on Azure Blob Storage
               </span>
             </div>
           )}
