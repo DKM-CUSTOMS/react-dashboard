@@ -22,8 +22,8 @@ export async function getUploads(companyName = "", options = {}) {
   if (companyName) params.append('company', companyName);
 
   // Build URL
-  const url = companyName ? 
-    `${BASE_URL}/${companyName}?${params}` : 
+  const url = companyName ?
+    `${BASE_URL}/${companyName}?${params}` :
     `${BASE_URL}?${params}`;
 
   const res = await fetch(url);
@@ -57,7 +57,7 @@ export async function getMasterRecords() {
     container: CONTAINER_NAME,
     filepath: MASTER_FILE_PATH
   };
-  
+
   try {
     const response = await fetch(LOGIC_APP_URL, {
       method: 'POST',
@@ -72,13 +72,13 @@ export async function getMasterRecords() {
     }
 
     const data = await response.json();
-    
+
     // Handle new optimized response format
     return {
       records: Array.isArray(data) ? data : [],
       total: Array.isArray(data) ? data.length : 0
     };
-    
+
   } catch (error) {
     console.error('Error fetching master records:', error);
     throw error;
@@ -88,7 +88,7 @@ export async function getMasterRecords() {
 export async function addOutbound(inboundMrn, outboundData) {
   const API_URL = "https://functionapp-python-uploads-huaafaf5f0cxc8g4.westeurope-01.azurewebsites.net/api/DgMRNExtractor";
   const API_KEY = import.meta.env.VITE_API_V2_KEY;
-  
+
   const payload = {
     route: "add_outbound",
     inbound_mrn: inboundMrn,
@@ -111,7 +111,7 @@ export async function addOutbound(inboundMrn, outboundData) {
 
     const data = await response.json();
     return data;
-    
+
   } catch (error) {
     console.error('Error adding outbound:', error);
     throw error;
@@ -126,7 +126,7 @@ export async function addOutbound(inboundMrn, outboundData) {
 export async function deleteOutbound(inboundMrn, outboundMrn) {
   const API_URL = "https://functionapp-python-uploads-huaafaf5f0cxc8g4.westeurope-01.azurewebsites.net/api/DgMRNExtractor";
   const API_KEY = import.meta.env.VITE_API_V2_KEY;
-  
+
   const payload = {
     route: "delete_outbound",
     inbound_mrn: inboundMrn,
@@ -149,7 +149,7 @@ export async function deleteOutbound(inboundMrn, outboundMrn) {
 
     const data = await response.json();
     return data;
-    
+
   } catch (error) {
     console.error('Error deleting outbound:', error);
     throw error;
@@ -158,9 +158,9 @@ export async function deleteOutbound(inboundMrn, outboundMrn) {
 
 // Performance Cache Paths
 const PERFORMANCE_LOGIC_APP_URL = "https://prod-247.westeurope.logic.azure.com:443/workflows/70684bd0dcdf4af7862e22f5b532c61c/triggers/When_an_HTTP_request_is_received/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2FWhen_an_HTTP_request_is_received%2Frun&sv=1.0&sig=aO7GvuqCc4KAA-s5I_dqSsk9jVqfcaND0kLMS-dF5IM";
-const SUMMARY_BLOB_PATH = "Dashboard/cache/users_summaryV2.json";
-const USER_CACHE_PATH_PREFIX = "Dashboard/cache/usersV2/";
-const MONTHLY_SUMMARY_BLOB_PATH = "Dashboard/cache/monthly_report_cacheV2.json";
+const SUMMARY_BLOB_PATH = "Dashboard/cache/users_summaryV3.json";
+const USER_CACHE_PATH_PREFIX = "Dashboard/cache/usersV3/";
+const MONTHLY_SUMMARY_BLOB_PATH = "Dashboard/cache/monthly_report_cacheV3.json";
 
 /**
  * Fetches the main performance summary (fast cache via Logic App)
@@ -206,9 +206,9 @@ export async function getMonthlyPerformance() {
     });
 
     if (!response.ok) {
-        // Fallback or throw? Let's just throw for now as monthly report might be critical
-        // OR fallback if you prefer, consistent with user performance?
-        // Let's stick to throwing main error to match getPerformanceSummary behavior for now unless requested
+      // Fallback or throw? Let's just throw for now as monthly report might be critical
+      // OR fallback if you prefer, consistent with user performance?
+      // Let's stick to throwing main error to match getPerformanceSummary behavior for now unless requested
       throw new Error(`Failed to fetch monthly report: ${response.status}`);
     }
 
@@ -239,7 +239,7 @@ export async function getUserPerformance(username) {
     });
 
     if (response.ok) {
-        return await response.json();
+      return await response.json();
     }
     console.warn(`Cache miss for ${username}, falling back to legacy API.`);
   } catch (error) {

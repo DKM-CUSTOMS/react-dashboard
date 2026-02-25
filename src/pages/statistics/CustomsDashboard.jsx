@@ -16,11 +16,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Activity,
-  Flame,
-  ShieldCheck,
-  AlertTriangle,
-  X,
-  HelpCircle
+  TrendingDown
 } from "lucide-react";
 import { Line, Doughnut } from "react-chartjs-2";
 import {
@@ -76,64 +72,38 @@ const writeCache = (payload) => {
    Components
    ------------------------------------------------- */
 
-const MetricStrip = ({ label, value, sub, icon: Icon, colorTheme, alertCount = 0, onClick, isActive }) => {
+const MetricStrip = ({ label, value, sub, icon: Icon, colorTheme }) => {
   const themes = {
     gray: "bg-gray-50 border-gray-100 text-gray-900",
     green: "bg-emerald-50 border-emerald-100 text-emerald-700",
     blue: "bg-blue-50 border-blue-100 text-blue-700",
     indigo: "bg-indigo-50 border-indigo-100 text-indigo-700",
-    // Active state specifically for the risk card
-    activeRisk: "bg-red-50 border-red-200 text-red-700 ring-2 ring-red-100",
   };
 
-  const currentTheme = isActive ? themes.activeRisk : (themes[colorTheme] || themes.gray);
+  const currentTheme = themes[colorTheme] || themes.gray;
 
   return (
-    <div
-      onClick={onClick}
-      className={`flex items-center justify-between p-4 rounded-sm border ${currentTheme} transition-all relative overflow-hidden ${onClick ? 'cursor-pointer hover:shadow-sm active:scale-[0.99] select-none' : ''}`}
-    >
+    <div className={`flex items-center justify-between p-4 rounded-sm border ${currentTheme} transition-all relative overflow-hidden`}>
       <div>
         <p className="text-[10px] uppercase tracking-wider opacity-70 font-bold mb-1">{label}</p>
         <h3 className="text-2xl font-bold">{value}</h3>
         {sub && (
-          <div className="flex items-center gap-1 mt-1">
-            {alertCount > 0 && <Flame className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />}
-            <p className={`text-[10px] font-medium ${alertCount > 0 ? 'text-red-600 font-bold' : 'opacity-60'}`}>
-              {sub}
-            </p>
-          </div>
+          <p className="text-[10px] font-medium opacity-60 mt-1">{sub}</p>
         )}
       </div>
-      <div className={`p-2 rounded-sm bg-white/50`}>
+      <div className="p-2 rounded-sm bg-white/50">
         <Icon className="w-5 h-5 opacity-80" />
       </div>
     </div>
   );
 };
 
-// Simple Progress Bar for Consistency
-const ConsistencyBar = ({ score }) => {
-  let color = "bg-red-400";
-  if (score > 60) color = "bg-orange-400";
-  if (score > 80) color = "bg-blue-400";
-  if (score > 90) color = "bg-emerald-500";
 
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }}></div>
-      </div>
-      <span className="text-[9px] font-bold text-gray-500">{score}%</span>
-    </div>
-  )
-}
 
 const CustomsDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState("all"); // 'all' | 'risk'
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [data, setData] = useState({ users: [], globalStats: {}, dates: [] });
@@ -188,27 +158,6 @@ const CustomsDashboard = () => {
         const activeDays = activeValues.length;
         const avg = activeDays > 0 ? total / activeDays : 0;
 
-        // --- Metric 1: Consistency Score ---
-        let variance = 0;
-        if (activeDays > 1) {
-          const sumDiffSquares = activeValues.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0);
-          variance = sumDiffSquares / activeDays;
-        }
-        const stdDev = Math.sqrt(variance);
-        const cv = avg > 0 ? stdDev / avg : 0;
-
-        // Scaled to be less harsh
-        let consistency = Math.max(0, Math.min(100, 100 - (cv * 50)));
-        if (activeDays < 2) consistency = 50;
-
-        // --- Metric 2: Burnout Risk ---
-        const recentActivity = activeValues.slice(-3);
-        let burnoutRisk = false;
-        if (recentActivity.length >= 3 && activeDays >= 3 && avg > 5) {
-          // Only flag if consistently 30%+ above average
-          burnoutRisk = recentActivity.every(val => val > (avg * 1.3));
-        }
-
         return {
           ...u,
           displayName: u.user.replace(/\./g, " "),
@@ -216,8 +165,6 @@ const CustomsDashboard = () => {
           efficiency: avg,
           activeDays: activeDays,
           daily_file_creations: u.daily_file_creations || {},
-          consistencyScore: Math.round(consistency),
-          burnoutRisk: burnoutRisk
         };
       });
 
@@ -225,11 +172,10 @@ const CustomsDashboard = () => {
       const totalFiles = processedUsers.reduce((acc, u) => acc + u.totalFiles, 0);
       const totalImport = processedUsers.filter(u => u.team === 'import').reduce((acc, u) => acc + u.totalFiles, 0);
       const totalExport = processedUsers.filter(u => u.team === 'export').reduce((acc, u) => acc + u.totalFiles, 0);
-      const totalBurnout = processedUsers.filter(u => u.burnoutRisk).length;
 
       const payload = {
         users: processedUsers,
-        globalStats: { totalFiles, totalImport, totalExport, totalBurnout },
+        globalStats: { totalFiles, totalImport, totalExport },
         dates: relevantDates
       };
 
@@ -250,11 +196,9 @@ const CustomsDashboard = () => {
     return data.users.filter(u => {
       const matchName = u.user.toLowerCase().includes(searchTerm.toLowerCase());
       const matchTeam = activeTab === "all" || u.team === activeTab;
-      // Risk Filter
-      const matchRisk = viewMode === 'risk' ? u.burnoutRisk : true;
-      return matchName && matchTeam && matchRisk;
+      return matchName && matchTeam;
     }).sort((a, b) => b.totalFiles - a.totalFiles);
-  }, [data.users, searchTerm, activeTab, viewMode]);
+  }, [data.users, searchTerm, activeTab]);
 
   const dailyTotals = useMemo(() => {
     const totals = {};
@@ -266,6 +210,32 @@ const CustomsDashboard = () => {
   }, [filteredUsers, data.dates]);
 
   const grandTotal = useMemo(() => filteredUsers.reduce((sum, u) => sum + u.totalFiles, 0), [filteredUsers]);
+
+  // --- Per-Day Peer Benchmarking ---
+  // A "busy day" is one where the team's active-user average is >= 10 files.
+  // A user is flagged as underperforming if they worked that day (val > 0)
+  // but did less than 55% of the team's daily average.
+  const dailyPeerStats = useMemo(() => {
+    const stats = {};
+    data.dates.forEach(date => {
+      const activeVals = filteredUsers
+        .map(u => u.daily_file_creations[date] || 0)
+        .filter(v => v > 0);
+
+      if (activeVals.length < 2) {
+        stats[date] = { avg: 0, threshold: 0, isBusyDay: false };
+        return;
+      }
+
+      const avg = activeVals.reduce((a, b) => a + b, 0) / activeVals.length;
+      stats[date] = {
+        avg: Math.round(avg * 10) / 10,
+        threshold: avg * 0.55,
+        isBusyDay: avg >= 10,
+      };
+    });
+    return stats;
+  }, [filteredUsers, data.dates]);
 
   const trendData = useMemo(() => {
     if (!data.dates.length) return null;
@@ -349,19 +319,16 @@ const CustomsDashboard = () => {
             colorTheme="green"
           />
           <MetricStrip
-            label="Workforce Health"
+            label="Active Declarants"
             value={data.users.length.toString()}
-            sub={data.globalStats.totalBurnout > 0 ? `${data.globalStats.totalBurnout} Overheating` : "All Systems Stable"}
-            alertCount={data.globalStats.totalBurnout}
-            icon={viewMode === 'risk' ? X : Activity}
+            sub="Team Members"
+            icon={Activity}
             colorTheme="indigo"
-            isActive={viewMode === 'risk'}
-            onClick={() => setViewMode(prev => prev === 'risk' ? 'all' : 'risk')}
           />
         </div>
 
         {/* Chart Section */}
-        {showCharts && viewMode !== 'risk' && (
+        {showCharts && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 border-b border-gray-100 bg-gray-50/30">
             <div className="lg:col-span-2 bg-white p-4 rounded-sm border border-gray-200 shadow-sm">
               <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Volume Trends (Last 10 Days)</h3>
@@ -409,13 +376,7 @@ const CustomsDashboard = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {viewMode === 'risk' && (
-              <div className="flex items-center gap-2 mr-4 bg-red-50 px-3 py-1 rounded-sm border border-red-100 animate-in fade-in slide-in-from-right-4 duration-300">
-                <Flame className="w-3.5 h-3.5 text-red-500" />
-                <span className="text-xs font-bold text-red-700 uppercase">Filtered: High Risk Only</span>
-                <button onClick={() => setViewMode('all')} className="ml-2 hover:bg-red-200 rounded-sm p-0.5"><X className="w-3 h-3 text-red-700" /></button>
-              </div>
-            )}
+
             {['all', 'import', 'export'].map(tab => (
               <button
                 key={tab}
@@ -428,6 +389,19 @@ const CustomsDashboard = () => {
                 {tab}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="px-6 py-2 border-t border-gray-100 flex items-center gap-4 bg-gray-50/50">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-blue-100 border border-blue-200"></div>
+            <span className="text-[10px] text-gray-500 font-medium">Normal output</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300"></div>
+            <TrendingDown className="w-3 h-3 text-amber-500" />
+            <span className="text-[10px] text-amber-700 font-medium">Low effort — below 55% of team avg on a high-volume day</span>
           </div>
         </div>
 
@@ -445,34 +419,6 @@ const CustomsDashboard = () => {
                   </th>
                 ))}
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center bg-gray-100/50">Total</th>
-                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                  <div className="flex items-center gap-1 group relative">
-                    <span>Stability Plan</span>
-                    <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                    {/* Tooltip - appears below to avoid overflow clipping */}
-                    <div className="absolute top-full right-0 mt-2 px-4 py-3 bg-gray-900 text-white text-[10px] rounded-sm shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-72 z-[9999] normal-case font-normal leading-relaxed">
-                      <div className="absolute top-0 right-4 -translate-y-full border-4 border-transparent border-b-gray-900"></div>
-
-                      <p className="font-bold text-[11px] mb-2 text-emerald-400">📊 What is Stability Score?</p>
-                      <p className="mb-2 text-gray-300">The Stability Score measures how <span className="text-white font-medium">consistent</span> a team member's daily work output is over the selected time period.</p>
-
-                      <p className="font-bold text-[11px] mb-1 text-blue-400">🔍 How is it calculated?</p>
-                      <p className="mb-2 text-gray-300">It analyzes the <span className="text-white font-medium">variance</span> in daily file creation. Lower variance = higher stability. Someone who processes 10-12 files daily scores higher than someone who does 0 one day and 30 the next.</p>
-
-                      <p className="font-bold text-[11px] mb-1 text-orange-400">📈 Score Ranges:</p>
-                      <ul className="space-y-1 mb-2">
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span> <span><strong className="text-emerald-400">90%+</strong> Excellent - Very consistent output</span></li>
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span> <span><strong className="text-blue-400">80-90%</strong> Good - Mostly stable</span></li>
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"></span> <span><strong className="text-orange-400">60-80%</strong> Fair - Some variation</span></li>
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></span> <span><strong className="text-red-400">&lt;60%</strong> Variable - Inconsistent pattern</span></li>
-                      </ul>
-
-                      <div className="pt-2 border-t border-gray-700 text-gray-400 text-[9px]">
-                        💡 <em>Use this to identify workload distribution issues, not individual performance.</em>
-                      </div>
-                    </div>
-                  </div>
-                </th>
               </tr>
 
               {/* Summary Row */}
@@ -492,7 +438,6 @@ const CustomsDashboard = () => {
                 <th className="px-6 py-2 text-[10px] font-bold text-gray-900 text-center bg-gray-100/50">
                   {grandTotal}
                 </th>
-                <th></th> {/* Stability spacer */}
               </tr>
 
             </thead>
@@ -502,18 +447,10 @@ const CustomsDashboard = () => {
                   <tr key={`${user.user}-${user.team}-${index}`} className="hover:bg-gray-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/statistics/performance/${user.user}`)}>
                     <td className="px-6 py-3 sticky left-0 bg-white group-hover:bg-gray-50/80 z-10 border-r border-transparent group-hover:border-gray-100">
                       <div className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold relative ${user.team === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold ${user.team === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
                           {user.user.charAt(0).toUpperCase()}
-                          {user.burnoutRisk && (
-                            <div className="absolute -top-1.5 -right-1.5 bg-white rounded-full p-0.5">
-                              <Flame className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
-                            </div>
-                          )}
                         </div>
-                        <div>
-                          <span className="text-xs font-semibold text-gray-700 block">{user.displayName}</span>
-                          {user.burnoutRisk && <span className="text-[8px] text-red-500 font-bold uppercase tracking-wide">High Risk</span>}
-                        </div>
+                        <span className="text-xs font-semibold text-gray-700">{user.displayName}</span>
                       </div>
                     </td>
                     <td className="px-6 py-3 text-center">
@@ -526,27 +463,38 @@ const CustomsDashboard = () => {
                     {/* Daily Columns */}
                     {data.dates.map(date => {
                       const val = user.daily_file_creations[date] || 0;
-                      let bgClass = "bg-transparent text-gray-300";
-                      if (val > 0) bgClass = "bg-slate-50 text-slate-600";
-                      if (val > 5) bgClass = "bg-blue-50 text-blue-700";
-                      if (val > 15) bgClass = "bg-blue-100 text-blue-800 font-bold";
-                      if (val > 30) bgClass = "bg-blue-200 text-blue-900 font-bold";
+                      const dayStats = dailyPeerStats[date];
+                      const isUnderperforming = dayStats?.isBusyDay && val > 0 && val < dayStats.threshold;
+
+                      let bgClass = "";
+                      if (isUnderperforming) {
+                        bgClass = "bg-amber-100 text-amber-700 font-bold ring-1 ring-amber-300";
+                      } else if (val > 0) {
+                        bgClass = "bg-slate-50 text-slate-600";
+                        if (val > 5) bgClass = "bg-blue-50 text-blue-700";
+                        if (val > 15) bgClass = "bg-blue-100 text-blue-800 font-bold";
+                        if (val > 30) bgClass = "bg-blue-200 text-blue-900 font-bold";
+                      }
 
                       return (
                         <td key={date} className="px-2 py-3 text-center">
-                          <div className={`mx-auto w-8 h-6 flex items-center justify-center rounded-sm text-xs ${val > 0 ? bgClass : ""}`}>
+                          <div
+                            className={`mx-auto w-8 h-6 flex items-center justify-center rounded-sm text-xs ${val > 0 ? bgClass : "text-gray-200"}`}
+                            title={isUnderperforming ? `⚠️ Low effort — team avg was ${dayStats.avg} files on this day` : ''}
+                          >
                             {val > 0 ? val : '-'}
                           </div>
+                          {isUnderperforming && (
+                            <div className="flex justify-center mt-0.5">
+                              <TrendingDown className="w-2.5 h-2.5 text-amber-500" />
+                            </div>
+                          )}
                         </td>
-                      )
+                      );
                     })}
 
                     <td className="px-6 py-3 text-center bg-gray-50/30 border-l border-gray-50 font-bold text-xs text-gray-800">
                       {user.totalFiles}
-                    </td>
-
-                    <td className="px-6 py-3">
-                      <ConsistencyBar score={user.consistencyScore} />
                     </td>
                   </tr>
                 );
@@ -557,7 +505,7 @@ const CustomsDashboard = () => {
           {/* Footer */}
           {filteredUsers.length === 0 ? (
             <div className="p-12 text-center text-gray-400 text-xs uppercase tracking-wide">
-              {viewMode === 'risk' ? "Great News! No one is currently at risk." : "No data available"}
+              No data available
             </div>
           ) : (
             <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
