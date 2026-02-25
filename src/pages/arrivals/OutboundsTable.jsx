@@ -14,9 +14,10 @@ import {
   Plus,
   X,
   Search,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
-import { getMasterRecords, addOutbound, deleteOutbound } from '../../api/api';
+import { getMasterRecords, addOutbound, deleteOutbound, modifyOutbound } from '../../api/api';
 import { getTrackingRecords, addTrackingRecord } from '../../api/trackingApi';
 import { useAuth } from '../../context/AuthContext';
 import PremiumConfirmationModal from '../../components/PremiumConfirmationModal';
@@ -40,6 +41,10 @@ const OutboundsTable = () => {
   const [formError, setFormError] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [outboundToDelete, setOutboundToDelete] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [outboundToEdit, setOutboundToEdit] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+  const [editFormError, setEditFormError] = useState(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [isSuccessState, setIsSuccessState] = useState(false);
@@ -148,6 +153,21 @@ const OutboundsTable = () => {
     },
     onError: (error) => {
       alert(`Failed to delete outbound: ${error.message}`);
+    }
+  });
+
+  // Mutation for modifying outbound
+  const modifyOutboundMutation = useMutation({
+    mutationFn: ({ inboundMrn, outboundMrn, updatedFields }) => modifyOutbound(inboundMrn, outboundMrn, updatedFields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['arrivals'] });
+      setShowEditModal(false);
+      setOutboundToEdit(null);
+      setEditFormData({});
+      setEditFormError(null);
+    },
+    onError: (error) => {
+      setEditFormError(error.message || 'Failed to modify outbound. Please try again.');
     }
   });
 
@@ -357,6 +377,98 @@ const OutboundsTable = () => {
     setOutboundToDelete(null);
   };
 
+  // Edit handlers
+  const canEditOutbound = () => {
+    if (!user) return false;
+    return hasRole('admin') || hasRole('Arrivals Agent');
+  };
+
+  const handleEditClick = (outbound) => {
+    setOutboundToEdit(outbound);
+    setEditFormData({
+      nombre_total_des_conditionnements: String(outbound.nombre_total_des_conditionnements || ''),
+      document_precedent: outbound.document_precedent || '',
+      document_d_accompagnement: outbound.document_d_accompagnement || '',
+      numero_de_reference: outbound.numero_de_reference || '',
+      date_acceptation: outbound.date_acceptation || ''
+    });
+    setEditFormError(null);
+    setShowEditModal(true);
+  };
+
+  const handleEditFormChange = (e) => {
+    const { name, value } = e.target;
+
+    if (name === 'date_acceptation') {
+      const numbers = value.replace(/\D/g, '');
+      let formatted = numbers;
+      if (numbers.length > 8) return;
+      if (numbers.length > 2) {
+        formatted = `${numbers.slice(0, 2)}/${numbers.slice(2)}`;
+      }
+      if (numbers.length > 4) {
+        formatted = `${formatted.slice(0, 5)}/${numbers.slice(4)}`;
+      }
+      setEditFormData(prev => ({ ...prev, [name]: formatted }));
+      setEditFormError(null);
+      return;
+    }
+
+    setEditFormData(prev => ({ ...prev, [name]: value }));
+    setEditFormError(null);
+  };
+
+  const handleEditFormSubmit = (e) => {
+    e.preventDefault();
+    if (modifyOutboundMutation.isPending || !outboundToEdit) return;
+    setEditFormError(null);
+
+    // Build only changed fields
+    const updatedFields = {};
+    const original = outboundToEdit;
+
+    const newCollis = editFormData.nombre_total_des_conditionnements.trim();
+    if (newCollis && String(newCollis) !== String(original.nombre_total_des_conditionnements || '')) {
+      const parsed = parseInt(newCollis);
+      if (isNaN(parsed) || parsed < 0) {
+        setEditFormError('Nombre total des conditionnements must be a positive number.');
+        return;
+      }
+      updatedFields.nombre_total_des_conditionnements = parsed;
+    }
+
+    if (editFormData.document_precedent.trim() !== (original.document_precedent || '')) {
+      updatedFields.document_precedent = editFormData.document_precedent.trim();
+    }
+    if (editFormData.document_d_accompagnement.trim() !== (original.document_d_accompagnement || '')) {
+      updatedFields.document_d_accompagnement = editFormData.document_d_accompagnement.trim();
+    }
+    if (editFormData.numero_de_reference.trim() !== (original.numero_de_reference || '')) {
+      updatedFields.numero_de_reference = editFormData.numero_de_reference.trim();
+    }
+    if (editFormData.date_acceptation.trim() !== (original.date_acceptation || '')) {
+      updatedFields.date_acceptation = editFormData.date_acceptation.trim();
+    }
+
+    if (Object.keys(updatedFields).length === 0) {
+      setEditFormError('No changes detected.');
+      return;
+    }
+
+    modifyOutboundMutation.mutate({
+      inboundMrn: mrn,
+      outboundMrn: outboundToEdit.mrn,
+      updatedFields
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setShowEditModal(false);
+    setOutboundToEdit(null);
+    setEditFormData({});
+    setEditFormError(null);
+  };
+
   // Smart Suggestions: Detect issues and provide recommendations
   const getSmartSuggestions = () => {
     const suggestions = [];
@@ -407,13 +519,14 @@ const OutboundsTable = () => {
   // Handle ESC key to close modal
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === 'Escape' && showAddForm) {
-        handleCancelForm();
+      if (e.key === 'Escape') {
+        if (showAddForm) handleCancelForm();
+        if (showEditModal) handleCancelEdit();
       }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [showAddForm]);
+  }, [showAddForm, showEditModal]);
 
   if (isLoading) {
     return (
@@ -1070,7 +1183,7 @@ const OutboundsTable = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                   Document d'accompagnement
                 </th>
-                {canDeleteOutbound() && (
+                {(canDeleteOutbound() || canEditOutbound()) && (
                   <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
                     Actions
                   </th>
@@ -1139,21 +1252,35 @@ const OutboundsTable = () => {
                     <td className="px-6 py-4 text-sm text-text-primary">
                       {outbound.document_d_accompagnement || 'N/A'}
                     </td>
-                    {canDeleteOutbound() && (
+                    {(canDeleteOutbound() || canEditOutbound()) && (
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => handleDeleteClick(outbound)}
-                          disabled={shouldPreventDeletion(outbound) || deleteOutboundMutation.isPending}
-                          className={`p-2 rounded-sm transition-colors ${shouldPreventDeletion(outbound)
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'hover:bg-red-50 text-red-600 hover:text-red-700'
-                            } ${deleteOutboundMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          title={shouldPreventDeletion(outbound)
-                            ? 'Cannot delete: Arrival is complete (saldo = 0). Only admins can delete from complete arrivals.'
-                            : 'Delete outbound'}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {canEditOutbound() && (
+                            <button
+                              onClick={() => handleEditClick(outbound)}
+                              disabled={modifyOutboundMutation.isPending}
+                              className={`p-2 rounded-sm transition-colors hover:bg-blue-50 text-blue-600 hover:text-blue-700 ${modifyOutboundMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Edit outbound"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteOutbound() && (
+                            <button
+                              onClick={() => handleDeleteClick(outbound)}
+                              disabled={shouldPreventDeletion(outbound) || deleteOutboundMutation.isPending}
+                              className={`p-2 rounded-sm transition-colors ${shouldPreventDeletion(outbound)
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'hover:bg-red-50 text-red-600 hover:text-red-700'
+                                } ${deleteOutboundMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title={shouldPreventDeletion(outbound)
+                                ? 'Cannot delete: Arrival is complete (saldo = 0). Only admins can delete from complete arrivals.'
+                                : 'Delete outbound'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -1225,6 +1352,190 @@ const OutboundsTable = () => {
                   )}
                   {deleteOutboundMutation.isPending ? 'Deleting...' : 'Delete Permanently'}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Outbound Modal */}
+        {showEditModal && outboundToEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+            <div
+              className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-surface border-b border-border px-6 py-4 flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-text-primary flex items-center gap-2">
+                  <Pencil className="w-5 h-5" />
+                  Edit Outbound
+                </h3>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={modifyOutboundMutation.isPending}
+                  className="text-text-muted hover:text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                {/* Current values reference */}
+                <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm">
+                  <p className="font-semibold text-gray-700 mb-1">Editing outbound:</p>
+                  <p className="font-mono text-xs text-gray-600">{outboundToEdit.mrn}</p>
+                </div>
+
+                {editFormError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                    <AlertCircle className="w-4 h-4 inline mr-2" />
+                    {editFormError}
+                  </div>
+                )}
+
+                <form onSubmit={handleEditFormSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Packages */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-1">
+                        Nombre total des conditionnements
+                      </label>
+                      <input
+                        type="text"
+                        name="nombre_total_des_conditionnements"
+                        value={editFormData.nombre_total_des_conditionnements}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border border-border bg-white focus:outline-none focus:border-primary transition-colors"
+                        placeholder="e.g., 7"
+                      />
+                      {/* Saldo impact preview */}
+                      {editFormData.nombre_total_des_conditionnements &&
+                        !isNaN(editFormData.nombre_total_des_conditionnements) &&
+                        String(editFormData.nombre_total_des_conditionnements) !== String(outboundToEdit.nombre_total_des_conditionnements || '') && (
+                          <div className="mt-2 text-xs">
+                            {(() => {
+                              const oldVal = parseInt(outboundToEdit.nombre_total_des_conditionnements) || 0;
+                              const newVal = parseInt(editFormData.nombre_total_des_conditionnements) || 0;
+                              const diff = newVal - oldVal;
+                              const currentSaldo = inboundData?.saldo || 0;
+                              const projected = currentSaldo - diff;
+
+                              if (projected < 0) {
+                                return (
+                                  <span className="flex items-center gap-1.5 text-red-600 font-medium bg-red-50 p-1.5 rounded">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    Warning: Over-declaring by {Math.abs(projected)}! (New Saldo: {projected})
+                                  </span>
+                                );
+                              } else if (projected === 0) {
+                                return (
+                                  <span className="flex items-center gap-1.5 text-green-600 font-medium bg-green-50 p-1.5 rounded">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    This change will complete the arrival.
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="flex items-center gap-1.5 text-blue-600 font-medium bg-blue-50 p-1.5 rounded">
+                                    <ArrowDown className="w-3.5 h-3.5" />
+                                    Saldo will change: {currentSaldo} → {projected}
+                                  </span>
+                                );
+                              }
+                            })()}
+                          </div>
+                        )}
+                    </div>
+
+                    {/* Date d'acceptation */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-1">
+                        Date d'acceptation
+                      </label>
+                      <input
+                        type="text"
+                        name="date_acceptation"
+                        value={editFormData.date_acceptation}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border border-border bg-white focus:outline-none focus:border-primary transition-colors"
+                        placeholder="DD/MM/YYYY"
+                        maxLength={10}
+                      />
+                    </div>
+
+                    {/* Numéro de référence */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-1">
+                        Numéro de référence
+                      </label>
+                      <input
+                        type="text"
+                        name="numero_de_reference"
+                        value={editFormData.numero_de_reference}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border border-border bg-white focus:outline-none focus:border-primary transition-colors"
+                        placeholder="e.g., EMCU8612798-03"
+                      />
+                    </div>
+
+                    {/* Document d'accompagnement */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-1">
+                        Document d'accompagnement
+                      </label>
+                      <input
+                        type="text"
+                        name="document_d_accompagnement"
+                        value={editFormData.document_d_accompagnement}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border border-border bg-white focus:outline-none focus:border-primary transition-colors"
+                        placeholder="e.g., N325 EMCU8612798-03"
+                      />
+                    </div>
+
+                    {/* Document précédent */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-text-primary mb-1">
+                        Document précédent
+                      </label>
+                      <input
+                        type="text"
+                        name="document_precedent"
+                        value={editFormData.document_precedent}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border border-border bg-white focus:outline-none focus:border-primary transition-colors"
+                        placeholder={`N821 ${mrn}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      disabled={modifyOutboundMutation.isPending}
+                      className="px-6 py-2 border border-border bg-surface hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={modifyOutboundMutation.isPending}
+                      className="px-6 py-2 bg-primary text-white hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {modifyOutboundMutation.isPending ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Pencil className="w-4 h-4" />
+                          Save Changes
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>

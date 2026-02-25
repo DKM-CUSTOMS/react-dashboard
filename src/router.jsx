@@ -15,9 +15,10 @@ import EmailAssistant from './pages/ai-agents/EmailAssistant';
 import ContainerWeightCheck from './pages/Containers/ContainerWeightCheck';
 import ArrivalsTable from './pages/arrivals/ArrivalsTable';
 import OutboundsTable from './pages/arrivals/OutboundsTable.jsx';
+import ArrivalsGuide from './pages/arrivals/ArrivalsGuide';
 import SendingFiscal from './pages/fiscal-representation/SendingFiscal';
 import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
-import DocumentRequest from './pages/fiscal-representation/DocumentRequest'; // Added
+import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
 import RequireRole from './components/auth/RequireRole';
 
 const withAccess = (element, allowedRoles) => (
@@ -75,6 +76,7 @@ const router = createBrowserRouter([
         element: withAccess(<ContainerWeightCheck />, ['admin', 'manager', 'Team Leader', 'Senior']),
       },
       { path: 'arrivals', element: withAccess(<ArrivalsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'arrivals/guide', element: withAccess(<ArrivalsGuide />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },

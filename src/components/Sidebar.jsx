@@ -78,6 +78,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       allowedRoles: ['user', 'admin', 'manager', 'Team Leader', 'Senior'],
       subtitles: [
         { label: 'Arrivals', path: '/arrivals' },
+        { label: 'Guide', path: '/arrivals/guide' },
       ],
       hasSubmenu: true,
     },

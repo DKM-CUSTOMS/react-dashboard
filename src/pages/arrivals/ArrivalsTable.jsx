@@ -18,7 +18,8 @@ import {
   CheckSquare,
   Square,
   X, // Added for clear button
-  FileSpreadsheet
+  FileSpreadsheet,
+  HelpCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 import ExportModal from '../../components/ExportModal';
@@ -236,10 +237,10 @@ const ArrivalsTable = () => {
 
     if (statusFilter === 'critical') {
       const days = calculateDaysSinceRelease(arrival.GDSREL_DATETIME);
-      statusMatch = status.value === 'error' && days >= 2;
+      statusMatch = status.value === 'error' && days >= 3;
     } else if (statusFilter === 'longWaiting') {
       const days = calculateDaysSinceRelease(arrival.GDSREL_DATETIME);
-      statusMatch = status.value === 'waiting' && days >= 2;
+      statusMatch = status.value === 'waiting' && days >= 3;
     } else if (statusFilter !== 'all') {
       statusMatch = status.value === statusFilter;
     }
@@ -341,12 +342,12 @@ const ArrivalsTable = () => {
     criticalErrors: arrivals.filter(a => {
       const status = getStatus(a);
       const days = calculateDaysSinceRelease(a.GDSREL_DATETIME);
-      return status.value === 'error' && days >= 2;
+      return status.value === 'error' && days >= 3;
     }).length,
     longWaiting: arrivals.filter(a => {
       const status = getStatus(a);
       const days = calculateDaysSinceRelease(a.GDSREL_DATETIME);
-      return status.value === 'waiting' && days >= 2;
+      return status.value === 'waiting' && days >= 3;
     }).length,
   };
 
@@ -739,14 +740,24 @@ const ArrivalsTable = () => {
                 Manage customs declarations and track shipment status
               </p>
             </div>
-            <button
-              onClick={handleRefresh}
-              disabled={isFetching}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              {isFetching ? 'Refreshing...' : 'Refresh'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/arrivals/guide')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 rounded-sm transition-colors text-gray-600 hover:text-primary"
+                title="Open Arrivals Guide"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Guide
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={isFetching}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+                {isFetching ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
           {/* Stats Bar */}
@@ -803,19 +814,19 @@ const ArrivalsTable = () => {
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'critical' ? 'bg-red-50 ring-1 ring-red-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
               onClick={() => setStatusFilter(statusFilter === 'critical' ? 'all' : 'critical')}
-              title="CRITICAL ERROR: Discrepancy persisting for more than 48 hours. Requires immediate fix."
+              title="CRITICAL ERROR: Discrepancy persisting for more than 72 hours. Requires immediate fix."
             >
               <AlertCircle className={`w-5 h-5 text-red-600 ${stats.criticalErrors > 0 ? 'animate-pulse' : ''}`} />
-              <span className="text-sm text-gray-600 font-medium">Critical ({'>'}2d):</span>
+              <span className="text-sm text-gray-600 font-medium">Critical ({'>'}3d):</span>
               <span className="font-bold text-sm text-red-600">{stats.criticalErrors}</span>
             </div>
             <div
               className={`flex items-center gap-2 cursor-pointer p-2 rounded transition-all ${statusFilter === 'longWaiting' ? 'bg-orange-50 ring-1 ring-orange-200 shadow-sm opacity-100' : statusFilter === 'all' ? 'opacity-100 hover:bg-gray-50' : 'opacity-50 hover:opacity-100'}`}
               onClick={() => setStatusFilter(statusFilter === 'longWaiting' ? 'all' : 'longWaiting')}
-              title="HIGH ALERT: Released more than 48 hours ago with NO action taken. Ghost shipment."
+              title="HIGH ALERT: Released more than 72 hours ago with NO action taken. Ghost shipment."
             >
               <Mail className={`w-5 h-5 text-orange-600 ${stats.longWaiting > 0 ? 'animate-pulse' : ''}`} />
-              <span className="text-sm text-gray-600 font-medium">High Alert ({'>'}2d):</span>
+              <span className="text-sm text-gray-600 font-medium">High Alert ({'>'}3d):</span>
               <span className="font-bold text-sm text-orange-600">{stats.longWaiting}</span>
             </div>
 
@@ -1119,7 +1130,7 @@ const ArrivalsTable = () => {
                         ) : (
                           <button
                             onClick={(e) => handleOpenTracking(arrival, e)}
-                            className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded transition-all ${(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting' && !trackingInfo) || needsRecheck
+                            className={`relative flex items-center gap-1 px-1.5 py-0.5 rounded transition-all ${(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 3 && status.value === 'waiting' && !trackingInfo) || needsRecheck
                               ? 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
                               : trackingInfo
                                 ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200'
@@ -1128,12 +1139,12 @@ const ArrivalsTable = () => {
                             title={
                               needsRecheck
                                 ? 'Checked > 3 days ago - Re-check required'
-                                : calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting'
+                                : calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 3 && status.value === 'waiting'
                                   ? `Waiting ${calculateDaysSinceRelease(arrival.GDSREL_DATETIME)} days - Email required`
                                   : 'View tracking & notes'
                             }
                           >
-                            {(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 2 && status.value === 'waiting' && !trackingInfo) || needsRecheck ? (
+                            {(calculateDaysSinceRelease(arrival.GDSREL_DATETIME) >= 3 && status.value === 'waiting' && !trackingInfo) || needsRecheck ? (
                               <>
                                 <Mail className="w-2.5 h-2.5" />
                                 <span className="text-[10px] font-semibold">Alert</span>
