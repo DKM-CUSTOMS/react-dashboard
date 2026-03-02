@@ -10,6 +10,7 @@ import UserCompareDashboard from './pages/statistics/UserCompareDashboard';
 import MultiUserCompareDashboard from './pages/statistics/MultiUserCompareDashboard';
 import UserComparisonSelector from './pages/statistics/UserComparisonSelector.jsx';
 import MonthlyReport from './pages/statistics/MonthlyReport';
+import UserManagement from './pages/statistics/UserManagement';
 import Profile from './pages/profile/Profile';
 import EmailAssistant from './pages/ai-agents/EmailAssistant';
 import ContainerWeightCheck from './pages/Containers/ContainerWeightCheck';
@@ -65,6 +66,10 @@ const router = createBrowserRouter([
       {
         path: 'statistics/monthly-report',
         element: withAccess(<MonthlyReport />, ['admin', 'Team Leader']),
+      },
+      {
+        path: 'statistics/user-management',
+        element: withAccess(<UserManagement />, ['admin', 'Administrator']),
       },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { format, subDays, eachDayOfInterval, differenceInDays } from "date-fns";
 import { useParams, useNavigate } from "react-router-dom";
+import { getTeamTailwindColors, getTeamHexColor } from "../../utils/teamColors";
 
 ChartJS.register(
   CategoryScale,
@@ -38,7 +39,7 @@ ChartJS.register(
    Helper Logic & Transformations
    ------------------------------------------------- */
 const transformApiData = (apiData) => {
-  if (!apiData || !apiData.daily_metrics) return null;
+  if (!apiData || !apiData.daily_metrics || !apiData.summary) return null;
 
   const today = new Date();
 
@@ -114,7 +115,7 @@ const transformApiData = (apiData) => {
   return {
     user: {
       name: apiData.user.replace(/\./g, " "),
-      team: "Export Team", // Placeholder, ideally comes from API
+      team: "Unassigned", // Placeholder, ideally comes from API
       totalFiles: apiData.summary.total_files_handled,
       totalModifications: apiData.summary.total_modifications,
       manualPercentage: Math.round(apiData.summary.manual_vs_auto_ratio.manual_percent),
@@ -172,19 +173,9 @@ const calculateWorkloadConsistency = (dailyTotals) => {
    Components (Styled for New Aesthetic)
    ------------------------------------------------- */
 
-const StatCard = ({ label, value, sub, icon: Icon, colorTheme }) => {
-  const themes = {
-    gray: "bg-gray-50 border-gray-100 text-gray-900",
-    green: "bg-emerald-50 border-emerald-100 text-emerald-700",
-    blue: "bg-blue-50 border-blue-100 text-blue-700",
-    indigo: "bg-indigo-50 border-indigo-100 text-indigo-700",
-    purple: "bg-purple-50 border-purple-100 text-purple-700",
-    orange: "bg-orange-50 border-orange-100 text-orange-700",
-  };
-  const currentTheme = themes[colorTheme] || themes.gray;
-
+const StatCard = ({ label, value, sub, icon: Icon, themeObj }) => {
   return (
-    <div className={`p-4 rounded-sm border ${currentTheme} transition-all`}>
+    <div className={`p-4 rounded-sm border ${themeObj.bg} ${themeObj.border} ${themeObj.text} transition-all`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-wider opacity-70 font-bold mb-1">{label}</p>
@@ -606,7 +597,28 @@ const UserPerformanceDashboard = () => {
     try {
       // Use optimized Logic App fetch
       const json = await getUserPerformance(username);
-      setData(transformApiData(json));
+      const transformed = transformApiData(json);
+
+      // Try to fetch team name from local DB
+      try {
+        const teamRes = await fetch('/api/teams');
+        if (teamRes.ok) {
+          const dbData = await teamRes.json();
+          if (dbData.success && dbData.teams) {
+            const matchedTeam = dbData.teams.find(t => t.members.some(m => m.toLowerCase() === username.toLowerCase()));
+            if (matchedTeam && transformed && transformed.user) {
+              let finalTeam = matchedTeam.name;
+              if (matchedTeam.parent_id) {
+                const parentTeam = dbData.teams.find(t => t.id === matchedTeam.parent_id);
+                if (parentTeam) finalTeam = parentTeam.name;
+              }
+              transformed.user.team = finalTeam;
+            }
+          }
+        }
+      } catch (e) { /* ignore team fetch error */ }
+
+      setData(transformed);
     } catch (e) {
       console.log(e);
     } finally {
@@ -621,6 +633,9 @@ const UserPerformanceDashboard = () => {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><RefreshCw className="w-6 h-6 animate-spin text-blue-500" /></div>;
   if (!data) return <div className="min-h-screen flex items-center justify-center">User not found.</div>;
 
+  const themeColors = getTeamTailwindColors(data.user.team);
+  const teamHex = getTeamHexColor(data.user.team);
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 font-sans text-slate-800">
 
@@ -634,9 +649,14 @@ const UserPerformanceDashboard = () => {
             <div>
               <h1 className="text-lg font-bold text-gray-900 uppercase tracking-tight flex items-center gap-2">
                 {data.user.name}
-                <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-sm border border-blue-100 uppercase tracking-wide">{data.user.workloadConsistency.category}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 ${themeColors.bgSolid} text-white rounded-sm border ${themeColors.borderSolid} uppercase tracking-wide`}>{data.user.workloadConsistency.category}</span>
               </h1>
-              <p className="text-xs text-gray-500 mt-1">90-Day Performance Profile • {data.user.team}</p>
+              <p className="text-xs text-gray-500 mt-2 flex items-center gap-2">
+                90-Day Performance Profile •
+                <span className={`px-1.5 py-0.5 rounded-sm border uppercase text-[9px] font-bold tracking-wide ${themeColors.bg} ${themeColors.text} ${themeColors.border}`}>
+                  {data.user.team}
+                </span>
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -650,11 +670,11 @@ const UserPerformanceDashboard = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
-        <StatCard label="Productivity" value={data.user.avgFilesPerDay} sub="Files / Active Day" icon={TrendingUp} colorTheme="blue" />
-        <StatCard label="Efficiency" value={`${data.user.avgTime}m`} sub="Avg Creation Time" icon={Clock} colorTheme="green" />
-        <StatCard label="Quality" value={data.user.modificationsPerFile} sub="Mods / File" icon={FileEdit} colorTheme="purple" />
-        <StatCard label="Peak Time" value={data.user.mostActiveHour} sub="Most Active Hour" icon={Zap} colorTheme="orange" />
-        <StatCard label="Top Client" value={data.user.mostActiveCompanyFiles} sub={data.user.mostActiveCompany} icon={Award} colorTheme="indigo" />
+        <StatCard label="Productivity" value={data.user.avgFilesPerDay} sub="Files / Active Day" icon={TrendingUp} themeObj={themeColors} />
+        <StatCard label="Efficiency" value={`${data.user.avgTime}m`} sub="Avg Creation Time" icon={Clock} themeObj={themeColors} />
+        <StatCard label="Quality" value={data.user.modificationsPerFile} sub="Mods / File" icon={FileEdit} themeObj={themeColors} />
+        <StatCard label="Peak Time" value={data.user.mostActiveHour} sub="Most Active Hour" icon={Zap} themeObj={themeColors} />
+        <StatCard label="Top Client" value={data.user.mostActiveCompanyFiles} sub={data.user.mostActiveCompany} icon={Award} themeObj={themeColors} />
       </div>
 
       {/* Insights Section */}
@@ -666,7 +686,7 @@ const UserPerformanceDashboard = () => {
           </div>
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-2">
-              <Activity className="w-4 h-4 text-blue-500" />
+              <Activity className={`w-4 h-4 ${themeColors.textSolid}`} />
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Workload Consistency</h3>
             </div>
             <h2 className="text-2xl font-bold text-gray-800 mb-2">{data.user.workloadConsistency.category}</h2>
@@ -722,8 +742,8 @@ const UserPerformanceDashboard = () => {
                 datasets: [{
                   label: 'Files',
                   data: data.chartData.dailyFiles.map(d => d.total),
-                  borderColor: '#3b82f6',
-                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderColor: teamHex,
+                  backgroundColor: `${teamHex}1a`,
                   tension: 0.3,
                   fill: true,
                   pointRadius: 2

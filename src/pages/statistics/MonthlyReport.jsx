@@ -3,10 +3,11 @@ import { getMonthlyPerformance } from '../../api/api';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart3, TrendingUp, Zap, User, ArrowUpDown, Loader,
+  BarChart3, TrendingUp, Zap, User, Users, ArrowUpDown, Loader,
   AlertTriangle, FileUp, FileDown, RefreshCw, Calendar,
-  Filter, Download, ChevronRight
+  Filter, Download, ChevronRight, FileText, Activity
 } from 'lucide-react';
+import { getTeamTailwindColors } from '../../utils/teamColors';
 
 // --- Caching Helpers ---
 const CACHE_KEY = "monthly-report-cache-v2"; // Changed to invalidate old cache
@@ -33,19 +34,9 @@ const writeCache = (payload) => {
 
 
 // --- Helper Components ---
-const StatCard = ({ label, value, sub, icon: Icon, colorTheme }) => {
-  const themes = {
-    gray: "bg-gray-50 border-gray-100 text-gray-900",
-    green: "bg-emerald-50 border-emerald-100 text-emerald-700",
-    blue: "bg-blue-50 border-blue-100 text-blue-700",
-    indigo: "bg-indigo-50 border-indigo-100 text-indigo-700",
-    purple: "bg-purple-50 border-purple-100 text-purple-700",
-    orange: "bg-orange-50 border-orange-100 text-orange-700",
-  };
-  const currentTheme = themes[colorTheme] || themes.gray;
-
+const StatCard = ({ label, value, sub, icon: Icon, themeObj }) => {
   return (
-    <div className={`p-4 rounded-sm border ${currentTheme} transition-all`}>
+    <div className={`p-4 rounded-sm border ${themeObj.bg} ${themeObj.border} ${themeObj.text} transition-all`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-wider opacity-70 font-bold mb-1">{label}</p>
@@ -63,8 +54,8 @@ const StatCard = ({ label, value, sub, icon: Icon, colorTheme }) => {
 // --- Main Component ---
 const MonthlyReport = () => {
   const navigate = useNavigate();
-  const [teamData, setTeamData] = useState({ import: [], export: [] });
-  const [activeTab, setActiveTab] = useState('import');
+  const [teamData, setTeamData] = useState({ teamsMap: {}, availableTeams: [], list: [] });
+  const [activeTab, setActiveTab] = useState('Unassigned'); // Default fallback
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -105,25 +96,51 @@ const MonthlyReport = () => {
       console.log('API Response:', result);
       console.log('All Users Data:', allUsersData);
 
+      // FETCH DB TEAMS
+      let dbTeams = [];
+      try {
+        const tmRes = await fetch('/api/teams');
+        if (tmRes.ok) {
+          const tData = await tmRes.json();
+          if (tData.success) dbTeams = tData.teams || [];
+        }
+      } catch (e) { console.warn("MonthlyReport: Failed to fetch db teams", e); }
+
       // Normalize field names to handle API variations
-      allUsersData = allUsersData.map(user => ({
-        ...user,
-        // Handle both old and new API field names
-        total_files_created: user.total_files_created ?? user.total_files_handled ?? 0,
-        avg_files_per_active_day: user.avg_files_per_active_day ?? user.avg_activity_per_day ?? 0,
-        manual_files: user.manual_files ?? 0,
-        automatic_files: user.automatic_files ?? 0,
-      }));
+      allUsersData = allUsersData.map(user => {
+        const uId = user.user || '';
+        const matchedTeam = dbTeams.find(t => t.members.some(m => m.toLowerCase() === uId.toLowerCase()));
+        let finalTeam = 'Unassigned';
+        if (matchedTeam) {
+          if (matchedTeam.parent_id) {
+            const parentTeam = dbTeams.find(t => t.id === matchedTeam.parent_id);
+            finalTeam = parentTeam ? parentTeam.name : matchedTeam.name;
+          } else {
+            finalTeam = matchedTeam.name;
+          }
+        }
+        return {
+          ...user,
+          team: finalTeam,
+          // Handle both old and new API field names
+          total_files_created: user.total_files_created ?? user.total_files_handled ?? 0,
+          avg_files_per_active_day: user.avg_files_per_active_day ?? user.avg_activity_per_day ?? 0,
+          manual_files: user.manual_files ?? 0,
+          automatic_files: user.automatic_files ?? 0,
+        };
+      });
 
-      const importTeam = allUsersData.filter(u => u.team === 'import');
-      const exportTeam = allUsersData.filter(u => u.team === 'export');
+      const newTeamData = {};
+      allUsersData.forEach(u => {
+        if (!newTeamData[u.team]) newTeamData[u.team] = [];
+        newTeamData[u.team].push(u);
+      });
+      const availableTeams = Object.keys(newTeamData).sort();
 
-      console.log('Import Team:', importTeam);
-      console.log('Export Team:', exportTeam);
+      const payload = { teamsMap: newTeamData, availableTeams, list: allUsersData };
 
-      const newTeamData = { import: importTeam, export: exportTeam };
-      setTeamData(newTeamData);
-      writeCache(newTeamData); // Write fresh data to cache
+      setTeamData(payload);
+      writeCache(payload); // Write fresh data to cache
 
     } catch (err) {
       console.error("Failed to fetch monthly report:", err);
@@ -139,8 +156,14 @@ const MonthlyReport = () => {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (teamData.availableTeams.length > 0 && !teamData.availableTeams.includes(activeTab)) {
+      setActiveTab(teamData.availableTeams[0]);
+    }
+  }, [teamData.availableTeams, activeTab]);
+
   const sortedData = useMemo(() => {
-    let sortableData = [...teamData[activeTab]];
+    let sortableData = [...(teamData.teamsMap[activeTab] || [])];
     if (sortConfig.key) {
       sortableData.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) {
@@ -167,18 +190,26 @@ const MonthlyReport = () => {
     navigate(`/statistics/performance/${username}`);
   };
 
-  const summaryStats = useMemo(() => {
-    const currentTeamData = teamData[activeTab];
-    if (currentTeamData.length === 0) return { topManual: 'N/A', topAutomatic: 'N/A', totalFiles: 0 };
+  const aggregatedStats = useMemo(() => {
+    const currentTeamData = teamData.teamsMap[activeTab] || [];
+    if (currentTeamData.length === 0) return { totalFiles: 0, maxDailyAvg: 0, globalEfficiency: 0 };
 
-    const topManual = currentTeamData.reduce((max, user) => (user.manual_files ?? 0) > (max.manual_files ?? 0) ? user : max, currentTeamData[0]);
-    const topAutomatic = currentTeamData.reduce((max, user) => (user.automatic_files ?? 0) > (max.automatic_files ?? 0) ? user : max, currentTeamData[0]);
     const totalFiles = currentTeamData.reduce((sum, user) => sum + (user.total_files_created ?? 0), 0);
+    const maxDailyAvg = Math.max(...currentTeamData.map(u => u.avg_files_per_active_day ?? 0));
+
+    let activeUserDays = 0;
+    currentTeamData.forEach(u => {
+      if (u.avg_files_per_active_day > 0) {
+        activeUserDays += (u.total_files_created ?? 0) / u.avg_files_per_active_day;
+      }
+    });
+
+    const globalEfficiency = activeUserDays > 0 ? (totalFiles / activeUserDays).toFixed(1) : 0;
 
     return {
-      topManual: topManual?.user?.replace(".", " ") ?? 'N/A',
-      topAutomatic: topAutomatic?.user?.replace(".", " ") ?? 'N/A',
-      totalFiles
+      totalFiles: totalFiles.toLocaleString(),
+      maxDailyAvg: maxDailyAvg > 0 ? maxDailyAvg.toFixed(1) : 0,
+      globalEfficiency
     };
   }, [teamData, activeTab]);
 
@@ -208,42 +239,48 @@ const MonthlyReport = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 font-sans text-slate-800">
-      {/* Header */}
-      <div className="w-full bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden mb-4">
-        <div className="px-6 py-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 uppercase tracking-tight flex items-center gap-2">
-              Monthly Performance Report
-              <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-sm border border-gray-200 uppercase tracking-wide">30 Days</span>
-            </h1>
-            <p className="text-xs text-gray-500 mt-1">Team productivity analysis and leaderboard</p>
-          </div>
-          <button
-            onClick={() => fetchData(true)}
-            disabled={isRefreshing}
-            className="flex items-center justify-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-sm text-xs font-bold uppercase tracking-wider hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Syncing...' : 'Refresh Data'}
-          </button>
-        </div>
+  const themeColors = getTeamTailwindColors(activeTab);
 
-        {/* Tabs */}
-        <div className="px-6 flex items-center gap-6 border-t border-gray-100 bg-gray-50/50">
-          <button
-            onClick={() => setActiveTab('import')}
-            className={`py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'import' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            <FileDown className="w-3.5 h-3.5" /> Import Team ({teamData.import.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('export')}
-            className={`py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'export' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            <FileUp className="w-3.5 h-3.5" /> Export Team ({teamData.export.length})
-          </button>
+  return (
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <Calendar className={`w-8 h-8 ${themeColors.textSolid}`} />
+            Monthly Performance Report
+            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-sm border border-gray-200 uppercase tracking-wide">30 Days</span>
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Team productivity analysis and leaderboard</p>
+        </div>
+        <button
+          onClick={() => fetchData(true)}
+          disabled={isRefreshing}
+          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-sm text-xs font-bold uppercase tracking-wider hover:bg-gray-50 hover:border-gray-300 transition-all disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          {isRefreshing ? 'Syncing...' : 'Refresh Data'}
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="w-full bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden mb-4">
+        <div className="px-6 flex items-center gap-6 border-t border-gray-100 bg-gray-50/50 overflow-x-auto whitespace-nowrap hidden-scrollbar">
+          {teamData.availableTeams.map(team => {
+            const tempColors = getTeamTailwindColors(team);
+            return (
+              <button
+                key={team}
+                onClick={() => setActiveTab(team)}
+                className={`py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${activeTab === team ? `${tempColors.borderSolid} ${tempColors.textSolid}` : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                <Users className="w-3.5 h-3.5" /> {team} ({teamData.teamsMap[team]?.length || 0})
+              </button>
+            );
+          })}
+          {teamData.availableTeams.length === 0 && (
+            <span className="py-3 text-xs font-bold uppercase text-gray-400 border-b-2 border-transparent">No Teams Available</span>
+          )}
         </div>
       </div>
 
@@ -251,24 +288,24 @@ const MonthlyReport = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         <StatCard
           label="Total Files"
-          value={summaryStats.totalFiles.toLocaleString()}
-          sub="Files Processed in 30 Days"
-          icon={BarChart3}
-          colorTheme="blue"
+          value={aggregatedStats.totalFiles}
+          sub="Processed this month"
+          icon={FileText}
+          themeObj={themeColors}
         />
         <StatCard
-          label="Top Manual"
-          value={summaryStats.topManual}
-          sub="Highest Manual Output"
+          label="Highest Avg/Day"
+          value={aggregatedStats.maxDailyAvg}
+          sub="Per single user"
           icon={TrendingUp}
-          colorTheme="purple"
+          themeObj={themeColors}
         />
         <StatCard
-          label="Top Auto"
-          value={summaryStats.topAutomatic}
-          sub="Highest Automation Usage"
-          icon={Zap}
-          colorTheme="green"
+          label="Global Efficiency"
+          value={aggregatedStats.globalEfficiency}
+          sub="Total / Active User-Days"
+          icon={Activity}
+          themeObj={themeColors}
         />
       </div>
 
@@ -305,9 +342,9 @@ const MonthlyReport = () => {
             <tbody className="divide-y divide-gray-50">
               {sortedData.map((row, index) => (
                 <tr key={`${row.user}-${row.team}-${index}`} className="hover:bg-gray-50/80 transition-colors cursor-pointer group" onClick={() => handleRowClick(row.user)}>
-                  <td className="px-6 py-3">
-                    <span className="text-xs font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
-                      {row.user.replace(".", " ")}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`text-xs font-bold text-gray-700 group-hover:${themeColors.textSolid} transition-colors capitalize`}>
+                      {(row.user || '').replace(/\./g, ' ')}
                     </span>
                   </td>
                   <td className="px-6 py-3">

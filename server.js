@@ -7,6 +7,7 @@ import { BlobServiceClient } from '@azure/storage-blob';
 import mysql from 'mysql2/promise';
 import syncRoutes from './server/routes/sync.js';
 import declarationRoutes from './server/routes/declarations.js';
+import teamRoutes from './server/routes/teams.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
 try {
@@ -59,7 +60,7 @@ app.get('/api/tracking/:mrn', (req, res) => {
 
 app.post('/api/tracking', (req, res) => {
   const { mrn, tracking_data } = req.body;
-  
+
   if (!mrn || !tracking_data) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -80,7 +81,7 @@ app.post('/api/tracking', (req, res) => {
 
 app.post('/api/tracking/bulk', (req, res) => {
   const { records } = req.body; // Array of { mrn, tracking_data }
-  
+
   if (!records || !Array.isArray(records)) {
     return res.status(400).json({ error: 'Invalid input containing records array' });
   }
@@ -270,6 +271,9 @@ app.use('/api/sync', syncRoutes);
 
 // Declarations API
 app.use('/api/declarations', declarationRoutes);
+
+// Teams API
+app.use('/api/teams', teamRoutes);
 
 // ============================================================
 // Database Debugging Tools (VNet Proxy)

@@ -18,6 +18,7 @@ import {
   Activity,
   TrendingDown
 } from "lucide-react";
+import { getTeamTailwindColors, getTeamHexColor } from "../../utils/teamColors";
 import { Line, Doughnut } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -48,7 +49,7 @@ ChartJS.register(
 /* -------------------------------------------------
    Cache Logic
    ------------------------------------------------- */
-const CACHE_KEY = "customs-dashboard-analytics-v1";
+const CACHE_KEY = "customs-dashboard-analytics-v2";
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour
 
 const readCache = () => {
@@ -110,6 +111,10 @@ const CustomsDashboard = () => {
   const [error, setError] = useState(null);
   const [showCharts, setShowCharts] = useState(true);
 
+  const getColorForTeam = (teamName) => {
+    return getTeamTailwindColors(teamName);
+  };
+
   const fetchData = useCallback(async (force = false) => {
     if (force) setIsRefreshing(true);
     else setLoading(true);
@@ -132,6 +137,15 @@ const CustomsDashboard = () => {
 
       // Legacy support: result might be array or object with users_summary
       const usersList = Array.isArray(result) ? result : (result.users_summary || []);
+
+      let dbTeams = [];
+      try {
+        const tmRes = await fetch('/api/teams');
+        if (tmRes.ok) {
+          const tData = await tmRes.json();
+          if (tData.success) dbTeams = tData.teams || [];
+        }
+      } catch (e) { console.warn("CustomsDashboard: Failed to fetch db teams", e); }
 
       // Determine Dates (Sort assuming DD/MM)
       const allDatesSet = new Set();
@@ -158,8 +172,21 @@ const CustomsDashboard = () => {
         const activeDays = activeValues.length;
         const avg = activeDays > 0 ? total / activeDays : 0;
 
+        const uId = u.user || '';
+        const matchedTeam = dbTeams.find(t => t.members.some(m => m.toLowerCase() === uId.toLowerCase()));
+        let finalTeam = u.team || 'Unassigned';
+        if (matchedTeam) {
+          if (matchedTeam.parent_id) {
+            const parentTeam = dbTeams.find(t => t.id === matchedTeam.parent_id);
+            finalTeam = parentTeam ? parentTeam.name : matchedTeam.name;
+          } else {
+            finalTeam = matchedTeam.name;
+          }
+        }
+
         return {
           ...u,
+          team: finalTeam,
           displayName: u.user.replace(/\./g, " "),
           totalFiles: total,
           efficiency: avg,
@@ -170,12 +197,18 @@ const CustomsDashboard = () => {
 
       // Global Totals
       const totalFiles = processedUsers.reduce((acc, u) => acc + u.totalFiles, 0);
-      const totalImport = processedUsers.filter(u => u.team === 'import').reduce((acc, u) => acc + u.totalFiles, 0);
-      const totalExport = processedUsers.filter(u => u.team === 'export').reduce((acc, u) => acc + u.totalFiles, 0);
+      const totalImport = processedUsers.filter(u => u.team && u.team.trim().toLowerCase() === 'import').reduce((acc, u) => acc + u.totalFiles, 0);
+      const totalExport = processedUsers.filter(u => u.team && u.team.trim().toLowerCase() === 'export').reduce((acc, u) => acc + u.totalFiles, 0);
+
+      const teamsDist = processedUsers.reduce((acc, u) => {
+        acc[u.team] = (acc[u.team] || 0) + u.totalFiles;
+        return acc;
+      }, {});
+      const sortedTeams = Object.keys(teamsDist).sort((a, b) => teamsDist[b] - teamsDist[a]);
 
       const payload = {
         users: processedUsers,
-        globalStats: { totalFiles, totalImport, totalExport },
+        globalStats: { totalFiles, totalImport, totalExport, teamsDist, sortedTeams },
         dates: relevantDates
       };
 
@@ -195,7 +228,7 @@ const CustomsDashboard = () => {
   const filteredUsers = useMemo(() => {
     return data.users.filter(u => {
       const matchName = u.user.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchTeam = activeTab === "all" || u.team === activeTab;
+      const matchTeam = activeTab === "all" || (u.team && u.team.trim().toLowerCase() === activeTab.trim().toLowerCase());
       return matchName && matchTeam;
     }).sort((a, b) => b.totalFiles - a.totalFiles);
   }, [data.users, searchTerm, activeTab]);
@@ -238,25 +271,29 @@ const CustomsDashboard = () => {
   }, [filteredUsers, data.dates]);
 
   const trendData = useMemo(() => {
-    if (!data.dates.length) return null;
-    const importDs = data.dates.map(d => data.users.filter(u => u.team === 'import').reduce((s, u) => s + (u.daily_file_creations[d] || 0), 0));
-    const exportDs = data.dates.map(d => data.users.filter(u => u.team === 'export').reduce((s, u) => s + (u.daily_file_creations[d] || 0), 0));
-
-    return {
-      labels: data.dates,
-      datasets: [
-        { label: 'Import', data: importDs, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 },
-        { label: 'Export', data: exportDs, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 }
-      ]
-    };
+    if (!data.dates || !data.dates.length) return null;
+    const datasets = (data.globalStats?.sortedTeams || []).slice(0, 5).map((team, idx) => {
+      const teamDs = data.dates.map(d => data.users.filter(u => u.team === team).reduce((s, u) => s + (u.daily_file_creations[d] || 0), 0));
+      const teamHex = getTeamHexColor(team);
+      return {
+        label: team,
+        data: teamDs,
+        borderColor: teamHex,
+        backgroundColor: `${teamHex}1a`,
+        fill: true, tension: 0.3
+      };
+    });
+    return { labels: data.dates, datasets };
   }, [data]);
 
   const teamDistData = useMemo(() => {
+    if (!data.globalStats?.sortedTeams) return null;
+    const topTeams = data.globalStats.sortedTeams.slice(0, 5);
     return {
-      labels: ['Import', 'Export'],
+      labels: topTeams,
       datasets: [{
-        data: [data.globalStats.totalImport, data.globalStats.totalExport],
-        backgroundColor: ['#3b82f6', '#10b981'],
+        data: topTeams.map(t => data.globalStats.teamsDist[t]),
+        backgroundColor: topTeams.map(t => getTeamHexColor(t)),
         borderWidth: 0,
       }]
     };
@@ -443,19 +480,19 @@ const CustomsDashboard = () => {
             </thead>
             <tbody className="divide-y divide-gray-50 bg-white">
               {filteredUsers.map((user, index) => {
+                const teamColors = getColorForTeam(user.team);
                 return (
                   <tr key={`${user.user}-${user.team}-${index}`} className="hover:bg-gray-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/statistics/performance/${user.user}`)}>
                     <td className="px-6 py-3 sticky left-0 bg-white group-hover:bg-gray-50/80 z-10 border-r border-transparent group-hover:border-gray-100">
                       <div className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold ${user.team === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold ${teamColors.bg} ${teamColors.text}`}>
                           {user.user.charAt(0).toUpperCase()}
                         </div>
                         <span className="text-xs font-semibold text-gray-700">{user.displayName}</span>
                       </div>
                     </td>
                     <td className="px-6 py-3 text-center">
-                      <span className={`px-1.5 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wide border ${user.team === 'import' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                        }`}>
+                      <span className={`px-1.5 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wide border ${teamColors.bg} ${teamColors.text} ${teamColors.border}`}>
                         {user.team}
                       </span>
                     </td>

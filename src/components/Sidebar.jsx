@@ -105,6 +105,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Performance', path: '/statistics/performance' },
         { label: 'Compare', path: '/statistics/performance/compare' },
         { label: 'Monthly Report', path: '/statistics/monthly-report' },
+        { label: 'User Management', path: '/statistics/user-management' },
       ],
       hasSubmenu: true,
     },

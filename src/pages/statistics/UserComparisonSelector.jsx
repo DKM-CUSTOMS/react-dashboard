@@ -1,29 +1,11 @@
 /* UserComparisonSelector.jsx - Multi-User Support */
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   User, Users, ArrowLeftRight, X, AlertTriangle, Search,
-  ArrowRight, Brain, Sparkles, CheckCircle, XCircle, Trophy, Target
+  ArrowRight, Brain, Sparkles, CheckCircle, XCircle, Trophy, Target, RefreshCw
 } from "lucide-react";
+import { getTeamTailwindColors } from "../../utils/teamColors";
 import { useNavigate } from "react-router-dom";
-
-// User lists
-const IMPORT_USERS = [
-  'FADWA.ERRAZIKI', 'AYOUB.SOURISTE', 'AYMANE.BERRIOUA', 'SANA.IDRISSI', 'AMINA.SAISS',
-  'KHADIJA.OUFKIR', 'ZOHRA.HMOUDOU', 'SIMO.ONSI', 'YOUSSEF.ASSABIR', 'ABOULHASSAN.AMINA',
-  'MEHDI.OUAZIR', 'OUMAIMA.EL.OUTMANI', 'HAMZA.ALLALI', 'MUSTAPHA.BOUJALA', 'HIND.EZZAOUI'
-];
-
-const EXPORT_USERS = [
-  'IKRAM.OULHIANE', 'MOURAD.ELBAHAZ', 'MOHSINE.SABIL', 'AYA.HANNI',
-  'ZAHIRA.OUHADDA', 'CHAIMAAE.EJJARI', 'HAFIDA.BOOHADDOU', 'KHADIJA.HICHAMI', 'FATIMA.ZAHRA.BOUGSIM'
-];
-
-// Helper to get team
-const getUserTeam = (username) => {
-  if (IMPORT_USERS.includes(username)) return "Import";
-  if (EXPORT_USERS.includes(username)) return "Export";
-  return "Unknown";
-};
 
 // Format name
 const formatName = (username) => username.replace(/\./g, " ").replace(/\b\w/g, l => l.toUpperCase());
@@ -38,13 +20,48 @@ const UserComparisonSelector = () => {
   const [activeTeamFilter, setActiveTeamFilter] = useState("all");
   const [comparisonMode, setComparisonMode] = useState("multi"); // "pair" or "multi"
 
+  const [allUsers, setAllUsers] = useState([]);
+  const [availableTeams, setAvailableTeams] = useState([]);
+
   const maxUsers = comparisonMode === "pair" ? 2 : 6;
 
-  // All users combined
-  const allUsers = useMemo(() => [
-    ...IMPORT_USERS.map(u => ({ id: u, name: formatName(u), team: 'Import' })),
-    ...EXPORT_USERS.map(u => ({ id: u, name: formatName(u), team: 'Export' }))
-  ].sort((a, b) => a.name.localeCompare(b.name)), []);
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        const res = await fetch('/api/teams');
+        const data = await res.json();
+        if (data.success) {
+          const dbTeams = data.teams || [];
+          const rawDbUsers = data.dbUsers || [];
+
+          const builtUsers = rawDbUsers.map(u => {
+            const matchedTeam = dbTeams.find(team => team.members.some(m => m.toLowerCase() === u.usercode.toLowerCase()));
+            let finalTeam = 'Unassigned';
+            if (matchedTeam) {
+              if (matchedTeam.parent_id) {
+                const parentTeam = dbTeams.find(t => t.id === matchedTeam.parent_id);
+                finalTeam = parentTeam ? parentTeam.name : matchedTeam.name;
+              } else {
+                finalTeam = matchedTeam.name;
+              }
+            }
+            return {
+              id: u.usercode,
+              name: formatName(u.usercode),
+              team: finalTeam
+            };
+          }).sort((a, b) => a.name.localeCompare(b.name));
+
+          setAllUsers(builtUsers);
+
+          // Only teams that actually have members
+          const activeTeams = Array.from(new Set(builtUsers.map(u => u.team)));
+          setAvailableTeams(activeTeams);
+        }
+      } catch (e) { console.error("Failed to load teams", e); }
+    };
+    fetchTeams();
+  }, []);
 
   // Filtered users
   const filteredUsers = useMemo(() => {
@@ -74,15 +91,17 @@ const UserComparisonSelector = () => {
 
   // Check if mixed team comparison
   const teamCounts = useMemo(() => {
-    const counts = { Import: 0, Export: 0 };
-    selectedUsers.forEach(u => {
-      const team = getUserTeam(u);
-      if (team !== 'Unknown') counts[team]++;
+    const counts = {};
+    selectedUsers.forEach(userId => {
+      const u = allUsers.find(x => x.id === userId);
+      if (u) {
+        counts[u.team] = (counts[u.team] || 0) + 1;
+      }
     });
     return counts;
-  }, [selectedUsers]);
+  }, [selectedUsers, allUsers]);
 
-  const isMixedComparison = teamCounts.Import > 0 && teamCounts.Export > 0;
+  const isMixedComparison = Object.keys(teamCounts).length > 1;
 
   // Get user colors
   const getUserColor = (index) => {
@@ -165,19 +184,28 @@ const UserComparisonSelector = () => {
                     <div className="p-5">
                       {selectedUsers[index] ? (
                         <div className="text-center">
-                          <div className={`w-16 h-16 ${colorClasses[getUserColor(index)].split(' ')[0]} rounded-sm mx-auto flex items-center justify-center text-white text-xl font-bold mb-3`}>
-                            {getInitials(selectedUsers[index])}
-                          </div>
-                          <h3 className="font-bold text-gray-900">{formatName(selectedUsers[index])}</h3>
-                          <span className={`inline-block mt-1 text-xs bg-${getUserColor(index)}-100 text-${getUserColor(index)}-700 px-2 py-0.5 rounded-full`}>
-                            {getUserTeam(selectedUsers[index])} Team
-                          </span>
-                          <button
-                            onClick={() => toggleUser(selectedUsers[index])}
-                            className="mt-3 flex items-center justify-center gap-1 mx-auto text-xs text-red-600 hover:text-red-700"
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Remove
-                          </button>
+                          {(() => {
+                            const userObj = allUsers.find(u => u.id === selectedUsers[index]);
+                            const teamName = userObj?.team || 'Unknown';
+                            const teamColors = getTeamTailwindColors(teamName);
+                            return (
+                              <>
+                                <div className={`w-16 h-16 ${colorClasses[getUserColor(index)].split(' ')[0]} rounded-sm mx-auto flex items-center justify-center text-white text-xl font-bold mb-3`}>
+                                  {getInitials(selectedUsers[index])}
+                                </div>
+                                <h3 className="font-bold text-gray-900">{formatName(selectedUsers[index])}</h3>
+                                <span className={`inline-block mt-1 text-xs ${teamColors.bg} ${teamColors.text} ${teamColors.border} uppercase font-bold tracking-wide border px-2 py-0.5 rounded-full`}>
+                                  {teamName}
+                                </span>
+                                <button
+                                  onClick={() => toggleUser(selectedUsers[index])}
+                                  className="mt-3 flex items-center justify-center gap-1 mx-auto text-xs text-red-600 hover:text-red-700"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" /> Remove
+                                </button>
+                              </>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <div className="text-center py-6">
@@ -251,7 +279,7 @@ const UserComparisonSelector = () => {
               <div>
                 <h3 className="font-bold text-amber-900 text-sm">Cross-Team Comparison</h3>
                 <p className="text-xs text-amber-700 mt-1">
-                  Comparing {teamCounts.Import} Import and {teamCounts.Export} Export team members.
+                  Comparing members from multiple teams ({Object.keys(teamCounts).join(', ')}).
                   Results may vary due to different workflows.
                 </p>
               </div>
@@ -302,21 +330,15 @@ const UserComparisonSelector = () => {
               </div>
 
               {/* Team Filter */}
-              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-sm">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'Import', label: 'Import' },
-                  { id: 'Export', label: 'Export' }
-                ].map(filter => (
+              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-sm flex-wrap max-w-full">
+                {['all', ...availableTeams].map(filter => (
                   <button
-                    key={filter.id}
-                    onClick={() => setActiveTeamFilter(filter.id)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${activeTeamFilter === filter.id
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                    key={filter}
+                    onClick={() => setActiveTeamFilter(filter)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${activeTeamFilter === filter
                       }`}
                   >
-                    {filter.label}
+                    {filter === 'all' ? 'All Teams' : filter}
                   </button>
                 ))}
               </div>
@@ -329,6 +351,7 @@ const UserComparisonSelector = () => {
               {filteredUsers.map(user => {
                 const isSelected = selectedUsers.includes(user.id);
                 const canSelect = !isSelected && selectedUsers.length < maxUsers;
+                const teamColors = getTeamTailwindColors(user.team);
 
                 return (
                   <button
@@ -341,12 +364,10 @@ const UserComparisonSelector = () => {
                       }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold text-white ${user.team === 'Import' ? 'bg-blue-500' : 'bg-emerald-500'
-                        }`}>
+                      <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold ${teamColors.bg} ${teamColors.text}`}>
                         {getInitials(user.id)}
                       </div>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${user.team === 'Import' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-                        }`}>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm border uppercase ${teamColors.bg} ${teamColors.text} ${teamColors.border}`}>
                         {user.team}
                       </span>
                     </div>
