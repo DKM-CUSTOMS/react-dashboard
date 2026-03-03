@@ -5,7 +5,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { getTeamTailwindColors } from '../../utils/teamColors';
 
-const USERS_API_URL = import.meta.env.VITE_AZURE_FUNCTION_URL;
+const USERS_API_URL = "/api/users/azure";
 const USERS_CACHE_KEY = "azure_users_cache_v1";
 const USERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -157,7 +157,7 @@ export default function UserManagement() {
 
             // 2. Unassign from old team (if moving between teams)
             if (sourceId !== null) {
-                let removeRes = await fetch(`/ api / teams / ${sourceId} /members/${encodeURIComponent(user)} `, {
+                let removeRes = await fetch(`/api/teams/${sourceId}/members/${encodeURIComponent(user)}`, {
                     method: 'DELETE'
                 });
                 if (!removeRes.ok) throw new Error("Failed to remove user from previous team");
@@ -193,7 +193,7 @@ export default function UserManagement() {
         setProcessing(true);
         try {
             // Remove from team API
-            let removeRes = await fetch(`/ api / teams / ${sourceId} /members/${encodeURIComponent(user)} `, {
+            let removeRes = await fetch(`/api/teams/${sourceId}/members/${encodeURIComponent(user)}`, {
                 method: 'DELETE'
             });
             if (!removeRes.ok) throw new Error("Failed to unassign user");
@@ -236,7 +236,7 @@ export default function UserManagement() {
     const handleToggleLeader = async (teamId, usercode, currentIsLeader) => {
         setProcessing(true);
         try {
-            const res = await fetch(`/ api / teams / ${teamId} /members/${encodeURIComponent(usercode)}/leader`, {
+            const res = await fetch(`/api/teams/${teamId}/members/${encodeURIComponent(usercode)}/leader`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_leader: !currentIsLeader })
@@ -298,8 +298,8 @@ export default function UserManagement() {
     );
 
     return (
-        <div className="p-4 md:p-8 w-full max-w-[1600px] mx-auto h-[calc(100vh-64px)] flex flex-col bg-transparent">
-            <div className="flex justify-between items-center mb-6 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-200 shrink-0">
+        <div className="px-3 py-3 md:px-5 md:py-4 w-full max-w-[1800px] mx-auto h-[calc(100vh-64px)] flex flex-col bg-transparent">
+            <div className="flex justify-between items-center mb-3 bg-white px-5 py-4 rounded-xl shadow-sm border border-gray-200 shrink-0">
                 <div>
                     <h1 className="text-2xl font-black tracking-tight text-gray-900 group flex items-center gap-3">
                         <div className="bg-blue-50 p-2 rounded-lg">
@@ -317,18 +317,13 @@ export default function UserManagement() {
 
                 {/* Left column: Available Users (Loads async from Azure) */}
                 <div
-                    className="w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden"
+                    className="w-full lg:w-[220px] xl:w-[240px] shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden"
                     onDragOver={handleDragOver}
                     onDrop={handleDropToAvailable}
                 >
-                    <div className="px-5 py-4 border-b border-gray-100 bg-white flex justify-between items-center z-10">
-                        <h2 className="font-black text-gray-900 flex items-center gap-2 tracking-tight text-sm">
-                            <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md">
-                                <Users size={16} strokeWidth={2.5} />
-                            </div>
-                            UNASSIGNED GLOBAL USERS
-                        </h2>
-                        <div className="flex items-center gap-2">
+                    <div className="px-4 pt-3 pb-2 border-b border-gray-100 bg-white z-10">
+                        {/* Top row: controls */}
+                        <div className="flex items-center justify-end gap-2 mb-2">
                             <button
                                 onClick={forceRefreshUsers}
                                 disabled={loadingUsers}
@@ -343,6 +338,13 @@ export default function UserManagement() {
                                 </span>
                             )}
                         </div>
+                        {/* Bottom row: title */}
+                        <h2 className="font-black text-gray-900 flex items-center gap-2 tracking-tight text-[11px]">
+                            <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md shrink-0">
+                                <Users size={14} strokeWidth={2.5} />
+                            </div>
+                            UNASSIGNED GLOBAL USERS
+                        </h2>
                     </div>
 
                     <div className="p-3 border-b border-border bg-white">
@@ -366,7 +368,11 @@ export default function UserManagement() {
                         </div>
                     </div>
 
-                    <div className="p-4 overflow-y-auto flex-1 space-y-2 relative min-h-[300px] bg-gray-50/30">
+                    <div
+                        className={`p-4 overflow-y-auto flex-1 space-y-2 relative min-h-[300px] transition-colors duration-300 ${draggedFromTeamId !== null && draggedUser ? 'bg-blue-50/50 ring-2 ring-blue-400 ring-inset' : 'bg-gray-50/30'}`}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDropToAvailable}
+                    >
                         {loadingUsers ? (
                             <div className="h-full flex flex-col items-center justify-center text-text-muted animate-pulse">
                                 <Loader2 className="animate-spin w-6 h-6 mb-2" />
@@ -394,16 +400,12 @@ export default function UserManagement() {
                                         draggable
                                         onDragStart={(e) => handleDragStart(e, user, null)}
                                         onDragEnd={handleDragEnd}
-                                        className="p-3 mb-2 bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg cursor-grab active:cursor-grabbing text-sm font-medium transition-all duration-300 flex items-center gap-3 group relative overflow-hidden"
+                                        className="py-2 px-3 mb-1.5 bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg cursor-grab active:cursor-grabbing text-sm font-medium transition-all duration-300 flex items-center group relative overflow-hidden"
                                     >
                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-gray-200 to-gray-300 group-hover:from-blue-400 group-hover:to-blue-600 transition-colors"></div>
-                                        <div className="w-9 h-9 rounded-md bg-gray-50 border border-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 shrink-0 transition-colors shadow-sm ml-2">
-                                            {user.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        <span className="truncate flex-1 tracking-tight text-gray-700 group-hover:text-gray-900 group-hover:font-semibold transition-all">{user}</span>
-
-                                        <div className="opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0 absolute right-3">
-                                            <div className="px-2.5 py-1.5 bg-blue-100 text-blue-700 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">Drop</div>
+                                        <span className="truncate flex-1 tracking-tight text-gray-700 group-hover:text-gray-900 group-hover:font-semibold transition-all pl-2 text-xs">{user}</span>
+                                        <div className="opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0 shrink-0">
+                                            <div className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-black uppercase tracking-wider">→</div>
                                         </div>
                                     </motion.div>
                                 ))}
@@ -413,7 +415,7 @@ export default function UserManagement() {
                 </div>
 
                 {/* Right column: Teams */}
-                <div className="w-full lg:w-2/3 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="flex-1 min-w-0 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div className="flex gap-4 items-center bg-white p-5 border-b border-gray-100 shrink-0 z-10">
                         {isAddingTeam ? (
                             <div className="flex gap-2 w-full items-center">

@@ -1,0 +1,142 @@
+{
+  "teams": [
+    {
+      "id": 1,
+      "name": "Import",
+      "parent_id": null,
+      "location": "Local Mock",
+      "members": [
+        "FADWA.ERRAZIKI",
+        "AYOUB.SOURISTE",
+        "AYMANE.BERRIOUA",
+        "SANA.IDRISSI",
+        "AMINA.SAISS",
+        "KHADIJA.OUFKIR",
+        "ZOHRA.HMOUDOU",
+        "SIMO.ONSI",
+        "YOUSSEF.ASSABIR",
+        "ABOULHASSAN.AMINA"
+      ],
+      "leaders": [
+        "FADWA.ERRAZIKI"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Export",
+      "parent_id": null,
+      "location": "Local Mock",
+      "members": [
+        "IKRAM.OULHIANE",
+        "MOURAD.ELBAHAZ",
+        "MOHSINE.SABIL",
+        "AYA.HANNI",
+        "ZAHIRA.OUHADDA",
+        "CHAIMAAE.EJJARI",
+        "HAFIDA.BOOHADDOU",
+        "KHADIJA.HICHAMI",
+        "FATIMA.ZAHRA.BOUGSIM"
+      ],
+      "leaders": [
+        "IKRAM.OULHIANE"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "usercode": "FADWA.ERRAZIKI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "AYOUB.SOURISTE",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "AYMANE.BERRIOUA",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "SANA.IDRISSI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "AMINA.SAISS",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "KHADIJA.OUFKIR",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "ZOHRA.HMOUDOU",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "SIMO.ONSI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "YOUSSEF.ASSABIR",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "ABOULHASSAN.AMINA",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "IKRAM.OULHIANE",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "MOURAD.ELBAHAZ",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "MOHSINE.SABIL",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "AYA.HANNI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "ZAHIRA.OUHADDA",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "CHAIMAAE.EJJARI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "HAFIDA.BOOHADDOU",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "KHADIJA.HICHAMI",
+      "role": "member",
+      "location": "Local Mock"
+    },
+    {
+      "usercode": "FATIMA.ZAHRA.BOUGSIM",
+      "role": "member",
+      "location": "Local Mock"
+    }
+  ]
+}

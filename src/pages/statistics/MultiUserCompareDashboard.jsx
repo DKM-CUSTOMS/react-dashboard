@@ -164,7 +164,7 @@ const UserSummaryCard = ({ data, color, efficiencyScore, consistencyScore }) => 
                 <div>
                     <h3 className="font-bold text-gray-900 text-lg">{user.name}</h3>
                     <p className="text-xs text-gray-500">
-                        {user.daysActive} active days • {user.mostActiveCompany} specialist
+                        {user.teamName} • {user.mostActiveCompany} specialist
                     </p>
                 </div>
             </div>
@@ -196,8 +196,16 @@ const MultiUserCompareDashboard = () => {
     const navigate = useNavigate();
     const { usernames } = useParams();
     const [usersData, setUsersData] = useState([]);
+    const [dbTeams, setDbTeams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    useEffect(() => {
+        fetch('/api/teams')
+            .then(res => res.json())
+            .then(data => { if (data.success) setDbTeams(data.teams || []); })
+            .catch(err => console.error("Failed to fetch teams:", err));
+    }, []);
 
     const userList = useMemo(() => usernames?.split(',').filter(Boolean) || [], [usernames]);
     const userColors = useMemo(() => ['blue', 'emerald', 'purple', 'orange', 'pink', 'cyan'], []);
@@ -330,7 +338,16 @@ const MultiUserCompareDashboard = () => {
                         {analytics.map((analytic, index) => (
                             <UserSummaryCard
                                 key={analytic.user.id}
-                                data={usersData[index]}
+                                data={{
+                                    ...usersData[index],
+                                    user: {
+                                        ...usersData[index].user,
+                                        teamName: (() => {
+                                            const t = dbTeams.find(t => t.members.some(m => m.toLowerCase() === analytic.user.id.toLowerCase()));
+                                            return t ? t.name : 'Unassigned';
+                                        })()
+                                    }
+                                }}
                                 color={userColors[index]}
                                 efficiencyScore={analytic.efficiency}
                                 consistencyScore={analytic.consistency}

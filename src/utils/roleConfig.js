@@ -11,8 +11,9 @@ export const userRoleMap = {
   'chaimae.ejjari@dkm-customs.com': ['Arrivals Agent'],
   'amina.saiss@dkm-customs.com': ['Arrivals Agent'],
   'sara.elmourabite@dkm-customs.com': ['Administrator'],
-  'kialy.vandersmissen@dkm-customs.com': ['Administrator']
+  'kialy.vandersmissen@dkm-customs.com': ['Administrator'],
+  'abdelghafour.idaoumahmoud@dkm-customs.com' : ['Administrator']
 };
-
+ 
 // Roles automatically granted to any authenticated user.
 export const defaultAuthenticatedRoles = ['authenticated', 'user'];

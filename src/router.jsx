@@ -80,9 +80,9 @@ const router = createBrowserRouter([
         path: 'container-weight-check',
         element: withAccess(<ContainerWeightCheck />, ['admin', 'manager', 'Team Leader', 'Senior']),
       },
-      { path: 'arrivals', element: withAccess(<ArrivalsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
-      { path: 'arrivals/guide', element: withAccess(<ArrivalsGuide />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
-      { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['user', 'admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'arrivals', element: withAccess(<ArrivalsTable />, ['Arrivals Agent', 'admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'arrivals/guide', element: withAccess(<ArrivalsGuide />, ['Arrivals Agent', 'admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['Arrivals Agent', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added

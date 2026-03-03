@@ -371,7 +371,7 @@ const UserSummaryCard = ({ user, data, color, efficiencyScore, consistencyScore 
         <div>
           <h3 className="font-bold text-gray-900 text-lg">{user.name}</h3>
           <p className="text-xs text-gray-500">
-            {user.daysActive} active days • {user.mostActiveCompany} specialist
+            {user.teamName} • {user.mostActiveCompany} specialist
           </p>
         </div>
       </div>
@@ -428,9 +428,17 @@ const UserCompareDashboard = () => {
   }, [params]);
 
   const [usersData, setUsersData] = useState([]);
+  const [dbTeams, setDbTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/teams')
+      .then(res => res.json())
+      .then(data => { if (data.success) setDbTeams(data.teams || []); })
+      .catch(err => console.error("Failed to fetch teams:", err));
+  }, []);
 
   const loadUsers = useCallback(async (force = false) => {
     if (force) setRefreshing(true);
@@ -575,14 +583,26 @@ const UserCompareDashboard = () => {
           {/* User Summary Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <UserSummaryCard
-              user={u1}
+              user={{
+                ...u1,
+                teamName: (() => {
+                  const t = dbTeams.find(t => t.members.some(m => m.toLowerCase() === u1.id.toLowerCase()));
+                  return t ? t.name : 'Unassigned';
+                })()
+              }}
               data={data1}
               color="blue"
               efficiencyScore={analytics.efficiency1}
               consistencyScore={analytics.consistency1}
             />
             <UserSummaryCard
-              user={u2}
+              user={{
+                ...u2,
+                teamName: (() => {
+                  const t = dbTeams.find(t => t.members.some(m => m.toLowerCase() === u2.id.toLowerCase()));
+                  return t ? t.name : 'Unassigned';
+                })()
+              }}
               data={data2}
               color="emerald"
               efficiencyScore={analytics.efficiency2}

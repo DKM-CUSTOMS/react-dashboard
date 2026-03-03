@@ -75,7 +75,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       label: 'Arrivals',
       icon: Truck,
       path: '/arrivals',
-      allowedRoles: ['user', 'admin', 'manager', 'Team Leader', 'Senior'],
+      allowedRoles: ['Arrivals Agent', 'admin', 'manager', 'Team Leader', 'Senior'],
       subtitles: [
         { label: 'Arrivals', path: '/arrivals' },
         { label: 'Guide', path: '/arrivals/guide' },
