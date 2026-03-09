@@ -488,136 +488,135 @@ export default function UserManagement() {
                 </div>
             </div>
         </div>
-        </>
     );
 }
-function TeamCard({ team, allTeams, draggedFromTeamId, draggedUser, handleDragOver, handleDropToTeam, handleDragStart, handleDragEnd, handleDeleteTeam, handleToggleLeader, setIsAddingTeam, processing }) {
+            function TeamCard({team, allTeams, draggedFromTeamId, draggedUser, handleDragOver, handleDropToTeam, handleDragStart, handleDragEnd, handleDeleteTeam, handleToggleLeader, setIsAddingTeam, processing}) {
     const subTeams = allTeams.filter(t => t.parent_id === team.id);
-    const isSubTeam = team.parent_id != null;
+            const isSubTeam = team.parent_id != null;
     const parentTeam = isSubTeam ? allTeams.find(t => t.id === team.parent_id) : null;
-    const colorName = parentTeam ? parentTeam.name : team.name;
-    const themeColors = getTeamTailwindColors(colorName);
-    const [selectedUserForAction, setSelectedUserForAction] = React.useState(null);
+            const colorName = parentTeam ? parentTeam.name : team.name;
+            const themeColors = getTeamTailwindColors(colorName);
+            const [selectedUserForAction, setSelectedUserForAction] = React.useState(null);
 
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            onDragOver={handleDragOver}
-            onDrop={(e) => { e.stopPropagation(); handleDropToTeam(e, team.id); }}
-            className={`transition-all duration-300 flex flex-col rounded-lg border-2 ${isSubTeam ? 'mt-4 border-dashed' : 'mb-4 shadow-sm hover:shadow-md'} 
+            return (
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onDragOver={handleDragOver}
+                onDrop={(e) => { e.stopPropagation(); handleDropToTeam(e, team.id); }}
+                className={`transition-all duration-300 flex flex-col rounded-lg border-2 ${isSubTeam ? 'mt-4 border-dashed' : 'mb-4 shadow-sm hover:shadow-md'} 
             ${draggedFromTeamId !== team.id && draggedUser ? `border-dashed ${themeColors.borderSolid} bg-white ring-4 ring-${themeColors.borderSolid}/20` : 'border-gray-200 bg-white'}`}
-        >
-            {/* Header */}
-            <div className={`px-4 py-3 flex justify-between items-center group rounded-t-md ${isSubTeam ? 'bg-transparent border-b border-gray-100' : `${themeColors.bg} border-b ${themeColors.border}`}`}>
-                <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full shadow-sm ${themeColors.bgSolid}`}></div>
-                    <h3 className={`font-bold tracking-wide ${isSubTeam ? 'text-gray-600 text-sm' : 'text-gray-900 text-base'}`}>
-                        {team.name}
-                    </h3>
-                    <span className="text-[10px] font-bold text-gray-500 bg-white/60 backdrop-blur-sm border border-black/5 px-2 py-0.5 rounded-full shadow-sm">
-                        {team.members.length} members
-                    </span>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!isSubTeam && (
-                        <button
-                            onClick={() => setIsAddingTeam(true, team.id)}
-                            disabled={processing}
-                            className={`p-1.5 rounded-md transition-colors ${themeColors.textSolid} hover:${themeColors.bgSolid} hover:text-white`}
-                            title="Add Sub-Team"
-                        >
-                            <PlusCircle size={15} strokeWidth={2.5} />
-                        </button>
-                    )}
-                    <button
-                        onClick={() => handleDeleteTeam(team.id)}
-                        disabled={processing}
-                        className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors disabled:opacity-50"
-                        title="Delete team"
-                    >
-                        <Trash2 size={15} strokeWidth={2.5} />
-                    </button>
-                </div>
-            </div>
-
-            {/* Body */}
-            <div className={`p-4 flex-1 flex flex-col gap-2 min-h-[120px] ${isSubTeam ? '' : 'bg-gray-50/30'}`}>
-                {team.members.length === 0 ? (
-                    <div className="flex items-center justify-center text-gray-400 text-xs font-semibold py-8 border-2 border-dashed border-gray-100 rounded-md bg-white">
-                        Drop users here
+            >
+                {/* Header */}
+                <div className={`px-4 py-3 flex justify-between items-center group rounded-t-md ${isSubTeam ? 'bg-transparent border-b border-gray-100' : `${themeColors.bg} border-b ${themeColors.border}`}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full shadow-sm ${themeColors.bgSolid}`}></div>
+                        <h3 className={`font-bold tracking-wide ${isSubTeam ? 'text-gray-600 text-sm' : 'text-gray-900 text-base'}`}>
+                            {team.name}
+                        </h3>
+                        <span className="text-[10px] font-bold text-gray-500 bg-white/60 backdrop-blur-sm border border-black/5 px-2 py-0.5 rounded-full shadow-sm">
+                            {team.members.length} members
+                        </span>
                     </div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                        {team.members.map(user => {
-                            const isLeader = (team.leaders || []).includes(user);
-                            return (
-                                <div
-                                    key={user}
-                                    draggable
-                                    onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, user, team.id); }}
-                                    onDragEnd={handleDragEnd}
-                                    className={`relative p-2.5 bg-white border ${isLeader ? `border-l-4 ${themeColors.borderSolid} shadow-sm ring-1 ring-black/5` : 'border-gray-200 hover:border-gray-300'} rounded-md cursor-grab active:cursor-grabbing text-sm font-medium transition-all flex justify-between items-center group`}
-                                >
-                                    <div className="flex items-center gap-3 w-full" onClick={(e) => { e.stopPropagation(); setSelectedUserForAction(selectedUserForAction === user ? null : user); }}>
-                                        <div className={`w-8 h-8 rounded-md shadow-sm ${isLeader ? `${themeColors.bgSolid} text-white` : `${themeColors.bg} ${themeColors.textSolid} border ${themeColors.border}`} flex items-center justify-center text-xs font-bold leading-none shrink-0`}>
-                                            {user.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        <span className={`truncate flex-1 tracking-tight ${isLeader ? 'font-bold text-gray-900' : 'text-gray-700'}`}>{user}</span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!isSubTeam && (
+                            <button
+                                onClick={() => setIsAddingTeam(true, team.id)}
+                                disabled={processing}
+                                className={`p-1.5 rounded-md transition-colors ${themeColors.textSolid} hover:${themeColors.bgSolid} hover:text-white`}
+                                title="Add Sub-Team"
+                            >
+                                <PlusCircle size={15} strokeWidth={2.5} />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => handleDeleteTeam(team.id)}
+                            disabled={processing}
+                            className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors disabled:opacity-50"
+                            title="Delete team"
+                        >
+                            <Trash2 size={15} strokeWidth={2.5} />
+                        </button>
+                    </div>
+                </div>
 
-                                        <div className="flex items-center gap-2 ml-auto z-10">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleToggleLeader(team.id, user, isLeader); setSelectedUserForAction(null); }}
-                                                disabled={processing}
-                                                className={`absolute right-10 flex flex-col items-center justify-center px-3 py-1.5 rounded-md transition-all text-xs font-bold tracking-wider shadow-sm backdrop-blur-md
+                {/* Body */}
+                <div className={`p-4 flex-1 flex flex-col gap-2 min-h-[120px] ${isSubTeam ? '' : 'bg-gray-50/30'}`}>
+                    {team.members.length === 0 ? (
+                        <div className="flex items-center justify-center text-gray-400 text-xs font-semibold py-8 border-2 border-dashed border-gray-100 rounded-md bg-white">
+                            Drop users here
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-2">
+                            {team.members.map(user => {
+                                const isLeader = (team.leaders || []).includes(user);
+                                return (
+                                    <div
+                                        key={user}
+                                        draggable
+                                        onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, user, team.id); }}
+                                        onDragEnd={handleDragEnd}
+                                        className={`relative p-2.5 bg-white border ${isLeader ? `border-l-4 ${themeColors.borderSolid} shadow-sm ring-1 ring-black/5` : 'border-gray-200 hover:border-gray-300'} rounded-md cursor-grab active:cursor-grabbing text-sm font-medium transition-all flex justify-between items-center group`}
+                                    >
+                                        <div className="flex items-center gap-3 w-full" onClick={(e) => { e.stopPropagation(); setSelectedUserForAction(selectedUserForAction === user ? null : user); }}>
+                                            <div className={`w-8 h-8 rounded-md shadow-sm ${isLeader ? `${themeColors.bgSolid} text-white` : `${themeColors.bg} ${themeColors.textSolid} border ${themeColors.border}`} flex items-center justify-center text-xs font-bold leading-none shrink-0`}>
+                                                {user.substring(0, 2).toUpperCase()}
+                                            </div>
+                                            <span className={`truncate flex-1 tracking-tight ${isLeader ? 'font-bold text-gray-900' : 'text-gray-700'}`}>{user}</span>
+
+                                            <div className="flex items-center gap-2 ml-auto z-10">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleToggleLeader(team.id, user, isLeader); setSelectedUserForAction(null); }}
+                                                    disabled={processing}
+                                                    className={`absolute right-10 flex flex-col items-center justify-center px-3 py-1.5 rounded-md transition-all text-xs font-bold tracking-wider shadow-sm backdrop-blur-md
                                                     ${selectedUserForAction === user ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4 pointer-events-none'}
                                                     ${isLeader
-                                                        ? 'bg-red-500 text-white border border-red-600 hover:bg-red-600'
-                                                        : 'bg-indigo-600 text-white border border-indigo-700 hover:bg-indigo-700'}`
-                                                }
-                                            >
-                                                {isLeader ? 'Demote' : 'Make Senior'}
-                                            </button>
+                                                            ? 'bg-red-500 text-white border border-red-600 hover:bg-red-600'
+                                                            : 'bg-indigo-600 text-white border border-indigo-700 hover:bg-indigo-700'}`
+                                                    }
+                                                >
+                                                    {isLeader ? 'Demote' : 'Make Senior'}
+                                                </button>
 
-                                            {isLeader && <span className={`text-[9px] text-white ${themeColors.bgSolid} px-2 py-0.5 rounded uppercase font-bold tracking-widest shadow-sm`}>Senior</span>}
+                                                {isLeader && <span className={`text-[9px] text-white ${themeColors.bgSolid} px-2 py-0.5 rounded uppercase font-bold tracking-widest shadow-sm`}>Senior</span>}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            )
-                        })}
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* Nested Sub Teams Container */}
+                {subTeams.length > 0 && (
+                    <div className="px-4 pb-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <div className="h-px bg-gray-200 flex-1"></div>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Sub-Teams</span>
+                            <div className="h-px bg-gray-200 flex-1"></div>
+                        </div>
+                        <div className="pl-4 border-l-2 border-gray-100 space-y-4">
+                            {subTeams.map(subTeam => (
+                                <TeamCard
+                                    key={subTeam.id}
+                                    team={subTeam}
+                                    allTeams={allTeams}
+                                    draggedFromTeamId={draggedFromTeamId}
+                                    draggedUser={draggedUser}
+                                    handleDragOver={handleDragOver}
+                                    handleDropToTeam={handleDropToTeam}
+                                    handleDragStart={handleDragStart}
+                                    handleDragEnd={handleDragEnd}
+                                    handleDeleteTeam={handleDeleteTeam}
+                                    handleToggleLeader={handleToggleLeader}
+                                    setIsAddingTeam={setIsAddingTeam}
+                                    processing={processing}
+                                />
+                            ))}
+                        </div>
                     </div>
                 )}
-            </div>
-
-            {/* Nested Sub Teams Container */}
-            {subTeams.length > 0 && (
-                <div className="px-4 pb-4">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="h-px bg-gray-200 flex-1"></div>
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Sub-Teams</span>
-                        <div className="h-px bg-gray-200 flex-1"></div>
-                    </div>
-                    <div className="pl-4 border-l-2 border-gray-100 space-y-4">
-                        {subTeams.map(subTeam => (
-                            <TeamCard
-                                key={subTeam.id}
-                                team={subTeam}
-                                allTeams={allTeams}
-                                draggedFromTeamId={draggedFromTeamId}
-                                draggedUser={draggedUser}
-                                handleDragOver={handleDragOver}
-                                handleDropToTeam={handleDropToTeam}
-                                handleDragStart={handleDragStart}
-                                handleDragEnd={handleDragEnd}
-                                handleDeleteTeam={handleDeleteTeam}
-                                handleToggleLeader={handleToggleLeader}
-                                setIsAddingTeam={setIsAddingTeam}
-                                processing={processing}
-                            />
-                        ))}
-                    </div>
-                </div>
-            )}
-        </motion.div>
-    );
+            </motion.div>
+            );
 }
