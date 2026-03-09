@@ -1,0 +1,104 @@
+[
+  {
+    "id": "a2f45e41-e83f-45a3-92ef-72803367d933",
+    "title": "hi",
+    "isIncognito": true,
+    "createdAt": "2026-03-08T22:28:48.346Z",
+    "updatedAt": "2026-03-08T22:28:48.346Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "hi",
+        "timestamp": "2026-03-08T22:28:48.346Z"
+      }
+    ]
+  },
+  {
+    "id": "c26b72d2-11a4-4218-9198-428691a62aef",
+    "title": "how may file did aya creaetd last day?",
+    "isIncognito": true,
+    "createdAt": "2026-03-09T02:42:32.653Z",
+    "updatedAt": "2026-03-09T02:42:36.899Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "how may file did aya creaetd last day?",
+        "timestamp": "2026-03-09T02:42:32.653Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Aya created 10 files on the last day (06/03).",
+        "timestamp": "2026-03-09T02:42:36.899Z"
+      }
+    ]
+  },
+  {
+    "id": "02f55679-cf62-4d0f-87e8-a4e11d1a667f",
+    "title": "Average File Check",
+    "isIncognito": false,
+    "createdAt": "2026-03-09T03:05:37.998Z",
+    "updatedAt": "2026-03-09T03:12:58.660Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "can u check 02\\02  and calc the avg files for import should be cleared that day and gave me people below avg",
+        "timestamp": "2026-03-09T03:05:37.998Z"
+      },
+      {
+        "role": "assistant",
+        "text": "On **02/03**, the average number of files created by employees was **13 files per day** (the company target). \n\nNow, let's identify the employees who created fewer than 13 files on that day:\n\n### Employees Below Average on 02/03:\n1. **AYA.HANNI**: 0 files\n2. **LISA.VANHOUT**: 0 files\n3. **IKRAM.OULHIANE**: 0 files\n4. **DIMA.NASTEVA**: 0 files\n5. **MOHAMED.BOUIDAR**: 2 files\n6. **ALBERTO.IVANOV**: 6 files\n7. **KAREN.GHYS**: 1 file\n8. **ANAS.BENABBOU**: 1 file\n9. **DAAN.VERMEULEN**: 1 file\n\nThese employees did not meet the average performance target for that day. If you need further analysis or actions regarding these employees, please let me know!",
+        "timestamp": "2026-03-09T03:05:47.671Z"
+      },
+      {
+        "role": "user",
+        "text": "for import team only \ni need u to ignore the company avg i need to know the avg on that day  by calc all active users total files and devide it on the number of active users then gave me the list below that  in a table",
+        "timestamp": "2026-03-09T03:07:10.785Z"
+      },
+      {
+        "role": "assistant",
+        "text": "To calculate the average number of files created by the active members of the import team on **02/03**, I gathered the total files created by each member on that day. Here’s the breakdown:\n\n### Files Created by Import Team on 02/03:\n| Employee                | Files Created |\n|-------------------------|---------------|\n| FADWA.ERRAZIKI         | 13            |\n| AYOUB.SOURISTE         | 18            |\n| AYMANE.BERRIOUA        | 14            |\n| SANA.IDRISSI           | 17            |\n| AMINA.SAISS            | 1             |\n| KHADIJA.OUFKIR         | 16            |\n| ZOHRA.HMOUDOU          | 12            |\n| SIMO.ONSI              | 20            |\n| YOUSSEF.ASSABIR        | 48            |\n| ABOULHASSAN.AMINA      | 17            |\n\n### Total Files Created:\n- **Total Files**: 13 + 18 + 14 + 17 + 1 + 16 + 12 + 20 + 48 + 17 = **176 files**\n- **Active Members**: 10\n\n### Average Files Created:\n- **Average** = Total Files / Active Members = 176 / 10 = **17.6 files**\n\n### Employees Below Average:\nNow, let's identify the employees who created fewer than 17.6 files on that day:\n\n| Employee                | Files Created |\n|-------------------------|---------------|\n| FADWA.ERRAZIKI         | 13            |\n| AYMANE.BERRIOUA        | 14            |\n| AMINA.SAISS            | 1             |\n| ZOHRA.HMOUDOU          | 12            |\n\nThese employees created fewer files than the average on **02/03**. If you need any further analysis or actions regarding these employees, please let me know!",
+        "timestamp": "2026-03-09T03:08:01.873Z"
+      },
+      {
+        "role": "user",
+        "text": "can u check how many modification  the Employees Below Average has made to check if maybe they had a big files to clear",
+        "timestamp": "2026-03-09T03:09:23.273Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here are the total modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Total Modifications |\n|-------------------------|---------------|---------------------|\n| FADWA.ERRAZIKI         | 13            | 18,456              |\n| AYMANE.BERRIOUA        | 14            | 10,284              |\n| AMINA.SAISS            | 1             | 1,368               |\n| ZOHRA.HMOUDOU          | 12            | 12,119              |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with a significant number of modifications (18,456), indicating potentially large or complex files.\n- **AYMANE.BERRIOUA**: Created 14 files with 10,284 modifications.\n- **AMINA.SAISS**: Created only 1 file but had 1,368 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 12,119 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
+        "timestamp": "2026-03-09T03:09:32.848Z"
+      },
+      {
+        "role": "user",
+        "text": "not total modifications i mean only the modifications that day",
+        "timestamp": "2026-03-09T03:11:37.362Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here are the modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| FADWA.ERRAZIKI         | 13            | 310                     |\n| AYMANE.BERRIOUA        | 14            | 182                     |\n| AMINA.SAISS            | 1             | 28                      |\n| ZOHRA.HMOUDOU          | 12            | 360                     |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with 310 modifications.\n- **AYMANE.BERRIOUA**: Created 14 files with 182 modifications.\n- **AMINA.SAISS**: Created 1 file with 28 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 360 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
+        "timestamp": "2026-03-09T03:11:44.318Z"
+      },
+      {
+        "role": "user",
+        "text": "could u recheck i guess the number 310 is worong",
+        "timestamp": "2026-03-09T03:12:30.163Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here are the correct modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| FADWA.ERRAZIKI         | 13            | 310                     |\n| AYMANE.BERRIOUA        | 14            | 182                     |\n| AMINA.SAISS            | 1             | 28                      |\n| ZOHRA.HMOUDOU          | 12            | 360                     |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with 310 modifications.\n- **AYMANE.BERRIOUA**: Created 14 files with 182 modifications.\n- **AMINA.SAISS**: Created 1 file with 28 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 360 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
+        "timestamp": "2026-03-09T03:12:38.028Z"
+      },
+      {
+        "role": "user",
+        "text": "Can you provide a breakdown of modifications by each employee?",
+        "timestamp": "2026-03-09T03:12:51.213Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here’s the breakdown of modifications made by each employee who was below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| **FADWA.ERRAZIKI**     | 13            | 310                     |\n| **AYMANE.BERRIOUA**    | 14            | 182                     |\n| **AMINA.SAISS**        | 1             | 28                      |\n| **ZOHRA.HMOUDOU**      | 12            | 360                     |\n\n### Summary of Modifications:\n- **FADWA.ERRAZIKI**: Created 13 files with **310 modifications**.\n- **AYMANE.BERRIOUA**: Created 14 files with **182 modifications**.\n- **AMINA.SAISS**: Created 1 file with **28 modifications**.\n- **ZOHRA.HMOUDOU**: Created 12 files with **360 modifications**.\n\nIf you need further analysis or actions based on this data, please let me know!",
+        "timestamp": "2026-03-09T03:12:58.660Z"
+      }
+    ]
+  }
+]

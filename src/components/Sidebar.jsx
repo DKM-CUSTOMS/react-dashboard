@@ -12,6 +12,7 @@ import {
   Container,
   X,
   Landmark,
+  Activity,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -106,6 +107,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Compare', path: '/statistics/performance/compare' },
         { label: 'Monthly Report', path: '/statistics/monthly-report' },
         { label: 'User Management', path: '/statistics/user-management' },
+        { label: 'HR Intelligence AI', path: '/statistics/ai-chat' },
       ],
       hasSubmenu: true,
     },
@@ -121,6 +123,15 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'DebetNote generator', path: '/fiscal/generate-documents' },
       ],
       hasSubmenu: true,
+    },
+    {
+      id: 'monitoring',
+      label: 'Monitoring',
+      icon: Activity,
+      path: '/monitoring/pipelines',
+      allowedRoles: ['admin', 'manager', 'Team Leader', 'Senior', 'developer', 'user'],
+      subtitles: [],
+      hasSubmenu: false,
     },
   ];
 

@@ -20,6 +20,8 @@ import ArrivalsGuide from './pages/arrivals/ArrivalsGuide';
 import SendingFiscal from './pages/fiscal-representation/SendingFiscal';
 import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
 import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
+import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
+import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
 import RequireRole from './components/auth/RequireRole';
 
 const withAccess = (element, allowedRoles) => (
@@ -71,6 +73,10 @@ const router = createBrowserRouter([
         path: 'statistics/user-management',
         element: withAccess(<UserManagement />, ['admin', 'Administrator']),
       },
+      {
+        path: 'statistics/ai-chat',
+        element: withAccess(<AiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator']),
+      },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {
         path: 'ai-agents/email-assistant',
@@ -86,6 +92,7 @@ const router = createBrowserRouter([
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added
+      { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['admin', 'manager', 'Team Leader', 'Senior', 'developer', 'user']) },
     ],
     errorElement: <NotFound />,
   },

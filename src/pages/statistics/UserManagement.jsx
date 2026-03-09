@@ -298,199 +298,200 @@ export default function UserManagement() {
     );
 
     return (
-        <div className="p-4 md:p-8 w-full max-w-[1600px] mx-auto h-[calc(100vh-64px)] flex flex-col bg-transparent">
-            <div className="flex justify-between items-center mb-6 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-200 shrink-0">
-                <div>
-                    <h1 className="text-2xl font-black tracking-tight text-gray-900 group flex items-center gap-3">
-                        <div className="bg-blue-50 p-2 rounded-lg">
-                            <Shield className="w-7 h-7 text-blue-600" />
-                        </div>
-                        Team Hierarchy & User Assignment
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-2 font-medium">Manage departmental structures, designate senior leaders, and organize the organizational hierarchy via drag and drop.</p>
-                </div>
-            </div>
-
-            {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded-sm border border-red-100">{error}</div>}
-
-            <div className="flex flex-col lg:flex-row gap-6 items-start flex-1 min-h-0">
-
-                {/* Left column: Available Users (Loads async from Azure) */}
-                <div
-                    className="w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden"
-                    onDragOver={handleDragOver}
-                    onDrop={handleDropToAvailable}
-                >
-                    <div className="px-5 py-4 border-b border-gray-100 bg-white flex justify-between items-center z-10">
-                        <h2 className="font-black text-gray-900 flex items-center gap-2 tracking-tight text-sm">
-                            <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md">
-                                <Users size={16} strokeWidth={2.5} />
+        <>
+            <div className="p-4 md:p-8 w-full max-w-[1600px] mx-auto h-[calc(100vh-64px)] flex flex-col bg-transparent">
+                <div className="flex justify-between items-center mb-6 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-200 shrink-0">
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tight text-gray-900 group flex items-center gap-3">
+                            <div className="bg-blue-50 p-2 rounded-lg">
+                                <Shield className="w-7 h-7 text-blue-600" />
                             </div>
-                            UNASSIGNED GLOBAL USERS
-                        </h2>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={forceRefreshUsers}
-                                disabled={loadingUsers}
-                                className="p-1.5 text-gray-500 hover:text-primary transition-colors bg-white border border-border rounded-sm shadow-sm disabled:opacity-50"
-                                title="Force Refresh from Server"
-                            >
-                                <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
-                            </button>
-                            {!loadingUsers && (
-                                <span className="bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
-                                    {availableUsers.length}
-                                </span>
-                            )}
-                        </div>
+                            Team Hierarchy & User Assignment
+                        </h1>
+                        <p className="text-sm text-gray-500 mt-2 font-medium">Manage departmental structures, designate senior leaders, and organize the organizational hierarchy via drag and drop.</p>
                     </div>
+                </div>
 
-                    <div className="p-3 border-b border-border bg-white">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name or code..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 border border-border rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-gray-50/50"
-                            />
-                            {searchQuery && (
+                {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded-sm border border-red-100">{error}</div>}
+
+                <div className="flex flex-col lg:flex-row gap-6 items-start flex-1 min-h-0">
+
+                    {/* Left column: Available Users (Loads async from Azure) */}
+                    <div
+                        className="w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden"
+                        onDragOver={handleDragOver}
+                        onDrop={handleDropToAvailable}
+                    >
+                        <div className="px-5 py-4 border-b border-gray-100 bg-white flex justify-between items-center z-10">
+                            <h2 className="font-black text-gray-900 flex items-center gap-2 tracking-tight text-sm">
+                                <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md">
+                                    <Users size={16} strokeWidth={2.5} />
+                                </div>
+                                UNASSIGNED GLOBAL USERS
+                            </h2>
+                            <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded-md"
+                                    onClick={forceRefreshUsers}
+                                    disabled={loadingUsers}
+                                    className="p-1.5 text-gray-500 hover:text-primary transition-colors bg-white border border-border rounded-sm shadow-sm disabled:opacity-50"
+                                    title="Force Refresh from Server"
                                 >
-                                    <X className="w-3.5 h-3.5" />
+                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
                                 </button>
-                            )}
+                                {!loadingUsers && (
+                                    <span className="bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">
+                                        {availableUsers.length}
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="p-4 overflow-y-auto flex-1 space-y-2 relative min-h-[300px] bg-gray-50/30">
-                        {loadingUsers ? (
-                            <div className="h-full flex flex-col items-center justify-center text-text-muted animate-pulse">
-                                <Loader2 className="animate-spin w-6 h-6 mb-2" />
-                                <p className="text-sm">Fetching users securely...</p>
-                                <p className="text-xs opacity-70 mt-1">(this may take up to 5s)</p>
-                            </div>
-                        ) : availableUsers.length === 0 ? (
-                            <div className="h-40 flex flex-col items-center justify-center text-gray-400 opacity-70">
-                                <CheckCircle2 size={32} className="mb-2" />
-                                <p className="text-sm">All users assigned!</p>
-                            </div>
-                        ) : filteredAvailableUsers.length === 0 ? (
-                            <div className="h-40 flex flex-col items-center justify-center text-gray-400 opacity-70">
-                                <Search size={32} className="mb-2 opacity-30" />
-                                <p className="text-sm">No matches found</p>
-                            </div>
-                        ) : (
-                            <AnimatePresence>
-                                {filteredAvailableUsers.map(user => (
-                                    <motion.div
-                                        key={user}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, scale: 0.90 }}
-                                        draggable
-                                        onDragStart={(e) => handleDragStart(e, user, null)}
-                                        onDragEnd={handleDragEnd}
-                                        className="p-3 mb-2 bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg cursor-grab active:cursor-grabbing text-sm font-medium transition-all duration-300 flex items-center gap-3 group relative overflow-hidden"
-                                    >
-                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-gray-200 to-gray-300 group-hover:from-blue-400 group-hover:to-blue-600 transition-colors"></div>
-                                        <div className="w-9 h-9 rounded-md bg-gray-50 border border-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 shrink-0 transition-colors shadow-sm ml-2">
-                                            {user.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        <span className="truncate flex-1 tracking-tight text-gray-700 group-hover:text-gray-900 group-hover:font-semibold transition-all">{user}</span>
-
-                                        <div className="opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0 absolute right-3">
-                                            <div className="px-2.5 py-1.5 bg-blue-100 text-blue-700 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">Drop</div>
-                                        </div>
-                                    </motion.div>
-                                ))}
-                            </AnimatePresence>
-                        )}
-                    </div>
-                </div>
-
-                {/* Right column: Teams */}
-                <div className="w-full lg:w-2/3 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="flex gap-4 items-center bg-white p-5 border-b border-gray-100 shrink-0 z-10">
-                        {isAddingTeam ? (
-                            <div className="flex gap-2 w-full items-center">
+                        <div className="p-3 border-b border-border bg-white">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
-                                    value={newTeamName}
-                                    onChange={e => setNewTeamName(e.target.value)}
-                                    placeholder="e.g. Finance Hub"
-                                    className="px-4 py-2 border border-blue-200 rounded-lg text-sm focus:ring-4 focus:ring-blue-50 focus:border-blue-500 focus:outline-none flex-1 transition-all bg-blue-50/30"
-                                    onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
-                                    autoFocus
-                                    disabled={processing}
+                                    placeholder="Search by name or code..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 border border-border rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-gray-50/50"
                                 />
-                                <button
-                                    onClick={handleAddTeam}
-                                    disabled={processing}
-                                    className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 active:scale-95 transition-all shadow-sm shadow-blue-500/30 flex items-center gap-2 text-sm font-bold disabled:opacity-50"
-                                >
-                                    <Save size={16} strokeWidth={2.5} /> Save
-                                </button>
-                                <button
-                                    onClick={() => setIsAddingTeam(false)}
-                                    disabled={processing}
-                                    className="text-gray-400 bg-gray-50 hover:bg-red-50 hover:text-red-500 p-2.5 rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                    <X size={20} strokeWidth={2.5} />
-                                </button>
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded-md"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
-                        ) : (
-                            <button
-                                onClick={() => setIsAddingTeam(true)}
-                                disabled={processing}
-                                className="flex items-center gap-2 text-sm font-bold text-gray-700 bg-white border-2 border-dashed border-gray-300 px-5 py-2.5 rounded-lg hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all focus:outline-none"
-                            >
-                                <PlusCircle size={18} strokeWidth={2.5} />
-                                Create New Team
-                            </button>
-                        )}
+                        </div>
+
+                        <div className="p-4 overflow-y-auto flex-1 space-y-2 relative min-h-[300px] bg-gray-50/30">
+                            {loadingUsers ? (
+                                <div className="h-full flex flex-col items-center justify-center text-text-muted animate-pulse">
+                                    <Loader2 className="animate-spin w-6 h-6 mb-2" />
+                                    <p className="text-sm">Fetching users securely...</p>
+                                    <p className="text-xs opacity-70 mt-1">(this may take up to 5s)</p>
+                                </div>
+                            ) : availableUsers.length === 0 ? (
+                                <div className="h-40 flex flex-col items-center justify-center text-gray-400 opacity-70">
+                                    <CheckCircle2 size={32} className="mb-2" />
+                                    <p className="text-sm">All users assigned!</p>
+                                </div>
+                            ) : filteredAvailableUsers.length === 0 ? (
+                                <div className="h-40 flex flex-col items-center justify-center text-gray-400 opacity-70">
+                                    <Search size={32} className="mb-2 opacity-30" />
+                                    <p className="text-sm">No matches found</p>
+                                </div>
+                            ) : (
+                                <AnimatePresence>
+                                    {filteredAvailableUsers.map(user => (
+                                        <motion.div
+                                            key={user}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.90 }}
+                                            draggable
+                                            onDragStart={(e) => handleDragStart(e, user, null)}
+                                            onDragEnd={handleDragEnd}
+                                            className="p-3 mb-2 bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg cursor-grab active:cursor-grabbing text-sm font-medium transition-all duration-300 flex items-center gap-3 group relative overflow-hidden"
+                                        >
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-gray-200 to-gray-300 group-hover:from-blue-400 group-hover:to-blue-600 transition-colors"></div>
+                                            <div className="w-9 h-9 rounded-md bg-gray-50 border border-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 shrink-0 transition-colors shadow-sm ml-2">
+                                                {user.substring(0, 2).toUpperCase()}
+                                            </div>
+                                            <span className="truncate flex-1 tracking-tight text-gray-700 group-hover:text-gray-900 group-hover:font-semibold transition-all">{user}</span>
+
+                                            <div className="opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0 absolute right-3">
+                                                <div className="px-2.5 py-1.5 bg-blue-100 text-blue-700 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">Drop</div>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
-                            <AnimatePresence>
-                                {teams.length === 0 && !loadingTeams && (
-                                    <div className="col-span-full py-12 text-center text-text-muted bg-white border border-dashed rounded-sm border-border">
-                                        <p>No teams configured yet.</p>
-                                    </div>
-                                )}
-                                {teams.filter(t => !t.parent_id).map(team => (
-                                    <TeamCard
-                                        key={team.id}
-                                        team={team}
-                                        allTeams={teams}
-                                        draggedFromTeamId={draggedFromTeamId}
-                                        draggedUser={draggedUser}
-                                        handleDragOver={handleDragOver}
-                                        handleDropToTeam={handleDropToTeam}
-                                        handleDragStart={handleDragStart}
-                                        handleDragEnd={handleDragEnd}
-                                        handleDeleteTeam={handleDeleteTeam}
-                                        handleToggleLeader={handleToggleLeader}
-                                        setIsAddingTeam={(val, parentId) => {
-                                            setIsAddingTeam(val);
-                                            setAddingParentId(parentId);
-                                        }}
-                                        processing={processing}
+                    {/* Right column: Teams */}
+                    <div className="w-full lg:w-2/3 flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="flex gap-4 items-center bg-white p-5 border-b border-gray-100 shrink-0 z-10">
+                            {isAddingTeam ? (
+                                <div className="flex gap-2 w-full items-center">
+                                    <input
+                                        type="text"
+                                        value={newTeamName}
+                                        onChange={e => setNewTeamName(e.target.value)}
+                                        placeholder="e.g. Finance Hub"
+                                        className="px-4 py-2 border border-blue-200 rounded-lg text-sm focus:ring-4 focus:ring-blue-50 focus:border-blue-500 focus:outline-none flex-1 transition-all bg-blue-50/30"
+                                        onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
+                                        autoFocus
+                                        disabled={processing}
                                     />
-                                ))}
-                            </AnimatePresence>
+                                    <button
+                                        onClick={handleAddTeam}
+                                        disabled={processing}
+                                        className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 active:scale-95 transition-all shadow-sm shadow-blue-500/30 flex items-center gap-2 text-sm font-bold disabled:opacity-50"
+                                    >
+                                        <Save size={16} strokeWidth={2.5} /> Save
+                                    </button>
+                                    <button
+                                        onClick={() => setIsAddingTeam(false)}
+                                        disabled={processing}
+                                        className="text-gray-400 bg-gray-50 hover:bg-red-50 hover:text-red-500 p-2.5 rounded-lg transition-colors disabled:opacity-50"
+                                    >
+                                        <X size={20} strokeWidth={2.5} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setIsAddingTeam(true)}
+                                    disabled={processing}
+                                    className="flex items-center gap-2 text-sm font-bold text-gray-700 bg-white border-2 border-dashed border-gray-300 px-5 py-2.5 rounded-lg hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all focus:outline-none"
+                                >
+                                    <PlusCircle size={18} strokeWidth={2.5} />
+                                    Create New Team
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+                                <AnimatePresence>
+                                    {teams.length === 0 && !loadingTeams && (
+                                        <div className="col-span-full py-12 text-center text-text-muted bg-white border border-dashed rounded-sm border-border">
+                                            <p>No teams configured yet.</p>
+                                        </div>
+                                    )}
+                                    {teams.filter(t => !t.parent_id).map(team => (
+                                        <TeamCard
+                                            key={team.id}
+                                            team={team}
+                                            allTeams={teams}
+                                            draggedFromTeamId={draggedFromTeamId}
+                                            draggedUser={draggedUser}
+                                            handleDragOver={handleDragOver}
+                                            handleDropToTeam={handleDropToTeam}
+                                            handleDragStart={handleDragStart}
+                                            handleDragEnd={handleDragEnd}
+                                            handleDeleteTeam={handleDeleteTeam}
+                                            handleToggleLeader={handleToggleLeader}
+                                            setIsAddingTeam={(val, parentId) => {
+                                                setIsAddingTeam(val);
+                                                setAddingParentId(parentId);
+                                            }}
+                                            processing={processing}
+                                        />
+                                    ))}
+                                </AnimatePresence>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 }
-
 function TeamCard({ team, allTeams, draggedFromTeamId, draggedUser, handleDragOver, handleDropToTeam, handleDragStart, handleDragEnd, handleDeleteTeam, handleToggleLeader, setIsAddingTeam, processing }) {
     const subTeams = allTeams.filter(t => t.parent_id === team.id);
     const isSubTeam = team.parent_id != null;

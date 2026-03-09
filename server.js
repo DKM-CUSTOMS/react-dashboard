@@ -8,6 +8,10 @@ import mysql from 'mysql2/promise';
 import syncRoutes from './server/routes/sync.js';
 import declarationRoutes from './server/routes/declarations.js';
 import teamRoutes from './server/routes/teams.js';
+import monitoringRoutes from './server/routes/monitoring.js';
+import hrAiRoutes from './server/routes/hrAi.js';
+import customInstructionsRoutes from './server/routes/customInstructions.js';
+import { hydrateAzureCache } from './server/services/hrAiTools.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
 try {
@@ -275,6 +279,13 @@ app.use('/api/declarations', declarationRoutes);
 // Teams API
 app.use('/api/teams', teamRoutes);
 
+// Pipeline Monitoring API
+app.use('/api/monitoring', monitoringRoutes);
+
+// AI Agent API
+app.use('/api/statistics/ai', hrAiRoutes);
+app.use('/api/ai/instructions', customInstructionsRoutes);
+
 // ============================================================
 // Database Debugging Tools (VNet Proxy)
 // ============================================================
@@ -350,6 +361,7 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  await hydrateAzureCache();
 });
