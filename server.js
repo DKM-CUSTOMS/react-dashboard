@@ -248,6 +248,57 @@ app.delete('/api/fiscal/principals', async (req, res) => {
   }
 });
 
+// POST - Request Logic App generation 
+app.post('/api/fiscal/generate-documents', async (req, res) => {
+  const url = process.env.LOGIC_APP_DEBENOTE_URL;
+  if (!url) {
+    return res.status(500).json({ error: 'Logic App URL not configured in environment' });
+  }
+
+  try {
+    // Forward the POST request to the Logic App URL
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({
+        status: data.status || 'error',
+        message: data.message || `Logic App request failed with status ${response.status}`
+      });
+    }
+
+    res.json(data);
+  } catch (err) {
+    console.error('Error calling logic app:', err);
+    res.status(500).json({ error: 'Failed to connect to Logic App' });
+  }
+});
+
+// GET - Fetch users from Azure via proxy
+app.get('/api/users/azure', async (req, res) => {
+  const url = process.env.AZURE_FUNCTION_URL;
+  if (!url) {
+    console.error('AZURE_FUNCTION_URL not configured in environment');
+    return res.status(500).json({ error: 'Azure Function URL not configured in environment' });
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+        return res.status(response.status).json({ error: `Azure Function returned status ${response.status}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Error proxying Azure Function request:', err);
+    res.status(500).json({ error: 'Failed to connect to Azure Function' });
+  }
+});
+
 // Health Check & Version
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '1.3.1-debug', timestamp: new Date().toISOString() });

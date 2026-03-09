@@ -107,9 +107,9 @@ export async function deletePrincipal(name) {
  * @returns {Promise<Object>} Response from the Logic App
  */
 export async function requestFiscalDocuments(declarationIds) {
-  // Use VITE_LOGIC_APP_DEBENOTE_URL from environment variables
-  // If not found, use a placeholder or the URL provided by the user in the prompt (if any)
-  const url = import.meta.env.VITE_LOGIC_APP_DEBENOTE_URL || "https://prod-XYZ.westeurope.logic.azure.com:443/workflows/YOUR_GUID/triggers/manual/paths/invoke?api-version=2016-10-01";
+  // Call our backend proxy instead of calling the Logic App directly
+  // This allows the production environment to inject the URL via standard env variables!
+  const url = `${FISCAL_API_BASE}/generate-documents`;
 
   try {
     const response = await fetch(url, {

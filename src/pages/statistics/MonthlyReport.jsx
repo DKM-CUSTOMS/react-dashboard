@@ -131,6 +131,10 @@ const MonthlyReport = () => {
       });
 
       const newTeamData = {};
+      // Pre-populate with all known teams from DB
+      dbTeams.filter(t => !t.parent_id).forEach(t => { newTeamData[t.name] = []; });
+      if (!newTeamData['Unassigned']) newTeamData['Unassigned'] = [];
+
       allUsersData.forEach(u => {
         if (!newTeamData[u.team]) newTeamData[u.team] = [];
         newTeamData[u.team].push(u);

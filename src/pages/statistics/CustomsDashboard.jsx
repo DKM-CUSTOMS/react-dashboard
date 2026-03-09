@@ -49,7 +49,7 @@ ChartJS.register(
 /* -------------------------------------------------
    Cache Logic
    ------------------------------------------------- */
-const CACHE_KEY = "customs-dashboard-analytics-v2";
+const CACHE_KEY = "customs-dashboard-analytics-v3";
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour
 
 const readCache = () => {
@@ -200,10 +200,12 @@ const CustomsDashboard = () => {
       const totalImport = processedUsers.filter(u => u.team && u.team.trim().toLowerCase() === 'import').reduce((acc, u) => acc + u.totalFiles, 0);
       const totalExport = processedUsers.filter(u => u.team && u.team.trim().toLowerCase() === 'export').reduce((acc, u) => acc + u.totalFiles, 0);
 
-      const teamsDist = processedUsers.reduce((acc, u) => {
-        acc[u.team] = (acc[u.team] || 0) + u.totalFiles;
-        return acc;
-      }, {});
+      const teamsDist = {};
+      dbTeams.filter(t => !t.parent_id).forEach(t => { teamsDist[t.name] = 0; });
+
+      processedUsers.forEach(u => {
+        teamsDist[u.team] = (teamsDist[u.team] || 0) + u.totalFiles;
+      });
       const sortedTeams = Object.keys(teamsDist).sort((a, b) => teamsDist[b] - teamsDist[a]);
 
       const payload = {
@@ -299,8 +301,24 @@ const CustomsDashboard = () => {
     };
   }, [data.globalStats]);
 
+  // Build per-team volumes for the metric cards (all known teams)
+  // NOTE: Must be above all early returns to comply with Rules of Hooks
+  const teamMetrics = useMemo(() => {
+    const sortedTeams = data.globalStats?.sortedTeams || [];
+    const teamsDist = data.globalStats?.teamsDist || {};
+    const total = data.globalStats?.totalFiles || 0;
+    return sortedTeams
+      .filter(t => t !== 'Unassigned')
+      .map(t => ({
+        name: t,
+        value: teamsDist[t] || 0,
+        pct: total > 0 ? Math.round(((teamsDist[t] || 0) / total) * 100) : 0
+      }));
+  }, [data.globalStats]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
+
 
   const importShare = data.globalStats.totalFiles ? Math.round((data.globalStats.totalImport / data.globalStats.totalFiles) * 100) : 0;
 
@@ -334,27 +352,26 @@ const CustomsDashboard = () => {
         </div>
 
         {/* Metrics Strip */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6 bg-white border-b border-gray-100">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3 p-4 bg-white border-b border-gray-100">
           <MetricStrip
             label="Total Executions"
             value={data.globalStats.totalFiles.toLocaleString()}
             icon={FileText}
             colorTheme="gray"
           />
-          <MetricStrip
-            label="Import Volume"
-            value={data.globalStats.totalImport.toLocaleString()}
-            sub={`${importShare}% of total`}
-            icon={ArrowDownRight}
-            colorTheme="blue"
-          />
-          <MetricStrip
-            label="Export Volume"
-            value={data.globalStats.totalExport.toLocaleString()}
-            sub={`${100 - importShare}% of total`}
-            icon={ArrowUpRight}
-            colorTheme="green"
-          />
+          {teamMetrics.map((tm, idx) => {
+            const colorThemes = ['blue', 'green', 'indigo', 'gray', 'blue'];
+            return (
+              <MetricStrip
+                key={tm.name}
+                label={`${tm.name} Volume`}
+                value={tm.value.toLocaleString()}
+                sub={`${tm.pct}% of total`}
+                icon={idx % 2 === 0 ? ArrowDownRight : ArrowUpRight}
+                colorTheme={colorThemes[idx % colorThemes.length]}
+              />
+            );
+          })}
           <MetricStrip
             label="Active Declarants"
             value={data.users.length.toString()}
@@ -412,20 +429,31 @@ const CustomsDashboard = () => {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-
-            {['all', 'import', 'export'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm border transition-all ${activeTab === tab
-                  ? 'bg-gray-800 text-white border-gray-800'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm border transition-all shrink-0 ${activeTab === 'all'
+                ? 'bg-gray-800 text-white border-gray-800'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+            >
+              All
+            </button>
+            {(data.globalStats.sortedTeams || []).map(tab => {
+              if (tab.toLowerCase() === 'all') return null;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm border transition-all shrink-0 ${activeTab === tab
+                    ? 'bg-gray-800 text-white border-gray-800'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
           </div>
         </div>
 
