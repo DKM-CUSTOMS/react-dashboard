@@ -75,7 +75,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'statistics/ai-chat',
-        element: withAccess(<AiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator']),
+        element: withAccess(<AiChatbotPage />, ['developer']),
       },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {
@@ -92,7 +92,7 @@ const router = createBrowserRouter([
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added
-      { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['admin', 'manager', 'Team Leader', 'Senior', 'developer', 'user']) },
+      { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['developer']) },
     ],
     errorElement: <NotFound />,
   },

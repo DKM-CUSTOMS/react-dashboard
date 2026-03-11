@@ -15,7 +15,8 @@
         "ZOHRA.HMOUDOU",
         "SIMO.ONSI",
         "YOUSSEF.ASSABIR",
-        "ABOULHASSAN.AMINA"
+        "ABOULHASSAN.AMINA",
+        "ADRIANA.SLAVOVA"
       ],
       "leaders": [
         "FADWA.ERRAZIKI"
@@ -137,6 +138,11 @@
       "usercode": "FATIMA.ZAHRA.BOUGSIM",
       "role": "member",
       "location": "Local Mock"
+    },
+    {
+      "usercode": "ADRIANA.SLAVOVA",
+      "role": "member",
+      "location": "Mock"
     }
   ]
 }
