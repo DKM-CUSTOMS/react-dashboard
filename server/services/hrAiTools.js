@@ -53,27 +53,32 @@ export async function hydrateAzureCache() {
         }
 
         // Fetch Teams or local DB equivalent
-        try {
-            const res = await fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/teams');
-            if (res.ok) {
-                const tData = await res.json();
-                if (tData.success && tData.teams) {
-                    AZURE_CACHE.teams = {};
-                    tData.teams.forEach(t => {
-                        AZURE_CACHE.teams[t.name.toLowerCase()] = t.members.map(m => m.toUpperCase());
-                    });
-                }
-            } else {
-                console.warn("Could not fetch local /api/teams");
-            }
-        } catch (e) {
-            console.warn("Error fetching local teams API", e.message);
-        }
+        await refreshTeamsCache();
 
     } catch (e) {
         console.error("Failed to hydrate azure cache:", e);
     }
 }
+
+async function refreshTeamsCache() {
+    try {
+        const res = await fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/teams');
+        if (res.ok) {
+            const tData = await res.json();
+            if (tData.success && tData.teams) {
+                AZURE_CACHE.teams = {};
+                tData.teams.forEach(t => {
+                    AZURE_CACHE.teams[t.name.toLowerCase()] = t.members.map(m => m.toUpperCase());
+                });
+            }
+        } else {
+            console.warn("Could not fetch local /api/teams");
+        }
+    } catch (e) {
+        console.warn("Error fetching local teams API", e.message);
+    }
+}
+
 
 // Helper function to resolve names
 function resolveEmployeeName(searchName) {
@@ -146,6 +151,28 @@ function resolveEmployeeName(searchName) {
     }
     return null;
 }
+
+// ═══ TOOL: Get Teams List ═══
+export const getTeamsList = new DynamicStructuredTool({
+    name: "get_teams_list",
+    description: "Fetch a list of all current company teams and their members. Use this when you are asked about who is in a specific team, or what teams exist.",
+    schema: z.object({}),
+    func: async () => {
+        // Force refresh the cache before serving to get the latest DB/mock data
+        await refreshTeamsCache();
+
+        if (Object.keys(AZURE_CACHE.teams).length === 0) {
+            return "No teams found in the database. The team structure might be empty.";
+        }
+
+        let report = `Current Company Teams List:\n\n`;
+        for (const [teamName, members] of Object.entries(AZURE_CACHE.teams)) {
+            report += `### ${teamName.toUpperCase()} Team\n`;
+            report += `Members (${members.length}): ${members.length > 0 ? members.join(', ') : 'No members yet'}\n\n`;
+        }
+        return report;
+    },
+});
 
 // ═══ TOOL: Get Daily Summary (10-day activity window) ═══
 export const getDailySummary = new DynamicStructuredTool({
@@ -262,15 +289,22 @@ export const getMonthlyReport = new DynamicStructuredTool({
 // ═══ TOOL: Get Employee Data (deep individual analytics) ═══
 export const getEmployeeData = new DynamicStructuredTool({
     name: "get_employee_data",
-    description: "Fetch deep individual analytics for a specific employee including daily metrics, peak hours, company specialization, file type breakdown, and productivity patterns. Use this for detailed questions about a specific person.",
+    description: "Fetch deep individual analytics for a specific employee including daily metrics, peak hours, company specialization, file type breakdown, and productivity patterns. Optionally filter daily metrics by providing start_date and end_date. Use this for detailed questions about a specific person.",
     schema: z.object({
         employee_name: z.string().describe("The name or partial name of the employee"),
+        start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format"),
+        end_date: z.string().optional().describe("Optional end date in YYYY-MM-DD format"),
     }),
-    func: async ({ employee_name }) => {
+    func: async ({ employee_name, start_date, end_date }) => {
         const resolvedName = resolveEmployeeName(employee_name);
         if (!resolvedName) return `Error: No data found in the system matching '${employee_name}'.`;
 
-        let report = `═══ Deep Analytics for ${resolvedName} ═══\n\n`;
+        let report = `═══ Deep Analytics for ${resolvedName} ═══\n`;
+        if (start_date || end_date) {
+            report += `(Filtered for Period: ${start_date || 'beginning'} to ${end_date || 'now'})\n\n`;
+        } else {
+            report += `\n`;
+        }
 
         // Deep fetch from users blob directly
         try {
@@ -334,12 +368,34 @@ export const getEmployeeData = new DynamicStructuredTool({
                     }
                 }
 
-                // Recent daily metrics (last 10 entries)
+                // Recent daily metrics (last 10 entries) or filter by date
                 if (data.daily_metrics && data.daily_metrics.length > 0) {
-                    const recent = data.daily_metrics.slice(-10);
-                    report += `\nRECENT DAILY METRICS (last ${recent.length} days):\n`;
-                    for (const day of recent) {
-                        report += `  ${day.date}: ${day.total_files_handled} files (${day.manual_files_created}M/${day.automatic_files_created}A) | ${day.modification_count} modifications\n`;
+                    let recent = data.daily_metrics;
+                    if (start_date || end_date) {
+                        recent = recent.filter(day => {
+                            const d = new Date(day.date);
+                            let within = true;
+                            if (start_date && d < new Date(start_date)) within = false;
+                            if (end_date && d > new Date(end_date)) within = false;
+                            return within;
+                        });
+                        
+                        let periodTotal = 0;
+                        for (const day of recent) {
+                            periodTotal += day.total_files_handled;
+                        }
+                        report += `\nFILTERED PERIOD TOTAL FILES: ${periodTotal}\n`;
+                    } else {
+                        recent = recent.slice(-10);
+                    }
+
+                    if (recent.length > 0) {
+                        report += `\nDAILY METRICS (${start_date || end_date ? 'Filtered' : 'last ' + recent.length + ' days'}):\n`;
+                        for (const day of recent) {
+                            report += `  ${day.date}: ${day.total_files_handled} files (${day.manual_files_created}M/${day.automatic_files_created}A) | ${day.modification_count} modifications\n`;
+                        }
+                    } else {
+                        report += `\nNo daily metrics found for the specified period.\n`;
                     }
                 }
 
@@ -367,19 +423,25 @@ export const getEmployeeData = new DynamicStructuredTool({
 
 export const getTeamOverview = new DynamicStructuredTool({
     name: "get_team_overview",
-    description: "Calculates totals and averages for everyone in a specific team.",
+    description: "Calculates totals and averages for everyone in a specific team. Filter by start_date and end_date if asking about a specific timeframe like 'last week' or 'this month'.",
     schema: z.object({
         team_name: z.string().describe("The name of the team (e.g. import, export)"),
+        start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format (e.g. 2026-03-02)"),
+        end_date: z.string().optional().describe("Optional end date in YYYY-MM-DD format (e.g. 2026-03-08)"),
     }),
-    func: async ({ team_name }) => {
+    func: async ({ team_name, start_date, end_date }) => {
         const teamKey = team_name.toLowerCase().replace(" team", "").trim();
         const members = AZURE_CACHE.teams[teamKey];
         if (!members) return `Team '${team_name}' not found. Available teams: ${Object.keys(AZURE_CACHE.teams).join(', ')}`;
 
         let totalFiles = 0;
         let activeMembers = 0;
+        let foundLogsInPeriod = false;
 
         let report = `Team Overview for ${team_name.toUpperCase()}:\n`;
+        if (start_date || end_date) {
+            report += `Period: ${start_date || 'beginning'} to ${end_date || 'now'}\n`;
+        }
         report += `Members: ${members.join(', ')}\n\n`;
 
         try {
@@ -395,16 +457,34 @@ export const getTeamOverview = new DynamicStructuredTool({
                     if (await blob.exists()) {
                         const buffer = await blob.downloadToBuffer();
                         const data = JSON.parse(buffer.toString("utf8"));
-                        if (data.summary) {
-                            memberTotal = data.summary.total_files_handled || 0;
-                            if (data.summary.company_specialization && Object.keys(data.summary.company_specialization).length > 0) {
-                                topClients = Object.entries(data.summary.company_specialization)
-                                    .sort((a, b) => b[1] - a[1])
-                                    .slice(0, 3)
-                                    .map(x => x[0]).join(', ');
-                            } else {
-                                topClients = "None";
+                        
+                        if (start_date || end_date) {
+                            if (data.daily_metrics) {
+                                for (const metric of data.daily_metrics) {
+                                    const d = new Date(metric.date);
+                                    let within = true;
+                                    if (start_date && d < new Date(start_date)) within = false;
+                                    if (end_date && d > new Date(end_date)) within = false;
+                                    if (within) {
+                                        memberTotal += (metric.total_files_handled || 0);
+                                        foundLogsInPeriod = true;
+                                    }
+                                }
                             }
+                        } else {
+                            if (data.summary) {
+                                memberTotal = data.summary.total_files_handled || 0;
+                                foundLogsInPeriod = true;
+                            }
+                        }
+
+                        if (data.summary && data.summary.company_specialization && Object.keys(data.summary.company_specialization).length > 0) {
+                            topClients = Object.entries(data.summary.company_specialization)
+                                .sort((a, b) => b[1] - a[1])
+                                .slice(0, 3)
+                                .map(x => x[0]).join(', ');
+                        } else {
+                            topClients = "None";
                         }
                     } else {
                         // Fallback
@@ -427,6 +507,10 @@ export const getTeamOverview = new DynamicStructuredTool({
 
         report += `\nTotal Team Files: ${totalFiles}\n`;
         if (activeMembers > 0) report += `Avg Per Member: ${(totalFiles / activeMembers).toFixed(2)}\n`;
+
+        if ((start_date || end_date) && !foundLogsInPeriod) {
+            report += `\n[WARNING FOR AI: There are absolutely no activity logs found for any member of this team during the requested dates (${start_date || 'start'} to ${end_date || 'now'}). The 0 files shown above simply mean no work was logged yet.]\n`;
+        }
 
         return report;
     },

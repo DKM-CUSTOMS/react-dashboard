@@ -108,7 +108,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Compare', path: '/statistics/performance/compare' },
         { label: 'Monthly Report', path: '/statistics/monthly-report' },
         { label: 'User Management', path: '/statistics/user-management' },
-        { label: 'HR Intelligence AI', path: '/statistics/ai-chat' },
+        { label: 'HR Intelligence AI', path: '/statistics/ai-chat', allowedRoles: ['developer'] },
       ],
       hasSubmenu: true,
     },
@@ -139,7 +139,7 @@ const Sidebar = ({ collapsed, toggle }) => {
       label: 'Monitoring',
       icon: Activity,
       path: '/monitoring/pipelines',
-      allowedRoles: ['admin', 'manager', 'Team Leader', 'Senior', 'developer', 'user'],
+      allowedRoles: ['developer'],
       subtitles: [],
       hasSubmenu: false,
     },
@@ -262,7 +262,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         {/* Submenu (Desktop only) */}
         {!collapsed && showSubtitles && item.hasSubmenu && (
           <div className="ml-6 mt-1 space-y-1">
-            {item.subtitles.map((subtitle, index) => (
+            {item.subtitles.filter(checkAccess).map((subtitle, index) => (
               <NavLink
                 key={index}
                 to={subtitle.path}
@@ -334,7 +334,7 @@ const Sidebar = ({ collapsed, toggle }) => {
                 {[
                   ...menuItems.find((i) => i.id === activePanel)?.subtitles || [],
                   ...otherItems.find((i) => i.id === activePanel)?.subtitles || [],
-                ].map((sub, idx) => (
+                ].filter(checkAccess).map((sub, idx) => (
                   <NavLink
                     key={idx}
                     to={sub.path}

@@ -1,9 +1,10 @@
 // Map user identifiers (email or id) to role arrays for quick manual control.
 export const userRoleMap = {
-  'anas.benabbou@dkm-customs.com': ['admin'],
+  'anas.benabbou@dkm-customs.com': ['developer'],
   'luc.dekerf@dkm-customs.com': ['admin'],
   'taha.nghimi@dkm-customs.com': ['admin'],
   'ben.mansour@dkm-customs.com': ['admin'],
+  'talib.ounssi@dkm-customs.com': ['admin'],
   'bjorn.vanacker@dkm-customs.com': ['manager'],
   'andy.paepen@dkm-customs.com': ['manager'],
   'kristof.ghys@dkm-customs.com': ['manager'],
