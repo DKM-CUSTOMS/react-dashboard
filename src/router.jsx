@@ -81,7 +81,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'statistics/customs-agent',
-        element: withAccess(<CustomsAiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator']),
+        element: withAccess(<CustomsAiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator', 'Senior']),
       },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {

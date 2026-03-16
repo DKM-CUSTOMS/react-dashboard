@@ -156,6 +156,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Profile', path: '/settings/profile' },
         { label: 'Preferences', path: '/settings/preferences' },
         { label: 'Security', path: '/settings/security' },
+        { label: 'User Access Control', path: '/admin/user-roles', allowedRoles: ['developer'] },
       ],
       hasSubmenu: true,
     },

@@ -1,20 +1,88 @@
 [
   {
-    "id": "6ed87ab1-671a-491f-ae28-38eedef6f54d",
-    "title": "HS Code Confirmation Request",
+    "id": "22400c3f-b17a-49b7-857c-a438ba1eeb93",
+    "title": "T-Shirt Customs Classification",
     "isIncognito": false,
-    "createdAt": "2026-03-16T09:54:40.576Z",
-    "updatedAt": "2026-03-16T09:54:45.380Z",
+    "createdAt": "2026-03-16T14:38:57.188Z",
+    "updatedAt": "2026-03-16T14:40:41.610Z",
     "messages": [
       {
         "role": "user",
-        "text": "Hi, Please confirm this complete hs code: 8529909090 => 8529 90 96 00 double check",
-        "timestamp": "2026-03-16T09:54:40.576Z"
+        "text": "hs code of tshirt",
+        "timestamp": "2026-03-16T14:38:57.188Z"
       },
       {
         "role": "assistant",
-        "text": "The code \"8529909090\" does not exist as a terminal code in the Combined Nomenclature. However, the parent category \"852990\" does exist, and here are some valid sub-categories under it:\n\n- **85299015**: Organische modules met luminescentiedioden en organische...\n- **85299030**: Elektronische assemblages vrij...\n- **85299093**: Voor toestellen bedoeld bij de posten 8527 en 8528 vrij...\n- **85299096**: Andere vrij...\n\nPlease provide more details about the product to determine the correct sub-category.",
-        "timestamp": "2026-03-16T09:54:45.380Z"
+        "text": "**Product Description**\nT-shirts, singlets, and other vests, knitted or crocheted.\n\n**Classification — CN Heading 6109**\nThe correct code depends on specific characteristics such as material composition and gender:\n\n👕 **General T-shirts**\n| Code | Description | Duty |\n|------|-------------|------|\n| 6109 10 | T-shirts, singlets, and other vests, of cotton | 0% |\n| 6109 90 | T-shirts, singlets, and other vests, of other textile materials | 0% |\n\n**TARIC (10-digit)**\n- 6109 10 00 00: T-shirts, singlets, and other vests, of cotton\n- 6109 90 00 00: T-shirts, singlets, and other vests, of other textile materials\n\n**Explanation**\nThe heading 6109 covers T-shirts, singlets, and other vests made from knitted or crocheted fabrics. The classification is further divided based on the material used, such as cotton or other textiles.\n\n**Sources used**\n✅ DKM internal dataset (GN_nomenclatuur_2026)\nℹ️ Verification: EU TARIC\n⚠️ To confirm the exact code, please provide details on the material composition and intended use (e.g., gender-specific).",
+        "timestamp": "2026-03-16T14:39:07.037Z"
+      },
+      {
+        "role": "user",
+        "text": "what about sofa",
+        "timestamp": "2026-03-16T14:39:25.606Z"
+      },
+      {
+        "role": "assistant",
+        "text": "**Product Description**\nSofas, chairs, and other seating furniture.\n\n**Classification — CN Heading 9401**\nThe correct code depends on specific characteristics such as the type of seating and its intended use:\n\n🛋️ **General Seating Furniture**\n| Code      | Description                                           | Duty |\n|-----------|-------------------------------------------------------|------|\n| 9401 10   | Seats of a kind used for aircraft                     | 0%   |\n| 9401 20   | Seats of a kind used for motor vehicles               | 3.7% |\n| 9401 80   | Other seats                                           | 0%   |\n\n**TARIC (10-digit)**\n- 9401 10 00 00: Seats of a kind used for aircraft\n- 9401 20 00 00: Seats of a kind used for motor vehicles\n- 9401 80 00 00: Other seats\n\n**Explanation**\nThe heading 9401 covers various types of seating furniture, including sofas. The classification is further divided based on the specific use, such as for aircraft, motor vehicles, or general seating.\n\n**Sources used**\n✅ DKM internal dataset (GN_nomenclatuur_2026)\nℹ️ Verification: EU TARIC\n⚠️ To confirm the exact code, please provide details on the specific type of sofa and its intended use (e.g., material, specific application).",
+        "timestamp": "2026-03-16T14:39:33.255Z"
+      },
+      {
+        "role": "user",
+        "text": "hi i have commodity code 39269097 for an import, what would be the complete commodity code ?",
+        "timestamp": "2026-03-16T14:40:33.707Z"
+      },
+      {
+        "role": "assistant",
+        "text": "1. **HS / CN Code**: 3926 90 97 00\n2. **Official Description**: Other articles of plastics and articles of other materials of headings 3901 to 3914, not elsewhere specified or included.\n3. **Classification Rationale**: This code falls under Chapter 39, which covers plastics and articles thereof. The specific subheading 3926 90 97 is used for other articles of plastics that do not fall under more specific categories within the chapter.\n4. **Duty Rate**: 6.5%\n5. **Important Notes**: Ensure compliance with any specific import regulations or restrictions that may apply to plastic articles.\n\n```customs-card\n{\"code\":\"3926 90 97 00\",\"description\":\"Other articles of plastics and articles of other materials of headings 3901 to 3914, not elsewhere specified or included.\",\"duty\":\"6.5%\",\"certifiedAt\":\"2026-03-16\"}\n```\n\n```customs-tree\n{\"levels\":[{\"type\":\"SECTION\",\"id\":\"VII\",\"label\":\"Plastics and articles thereof; rubber and articles thereof\"},{\"type\":\"CHAPTER\",\"id\":\"39\",\"label\":\"Plastics and articles thereof\"},{\"type\":\"HEADING\",\"id\":\"3926\",\"label\":\"Other articles of plastics and articles of other materials of headings 3901 to 3914\"},{\"type\":\"SUBHEADING\",\"id\":\"3926 90\",\"label\":\"Other\"},{\"type\":\"CN CODE\",\"id\":\"3926 90 97\",\"label\":\"Other\"}]}\n```",
+        "timestamp": "2026-03-16T14:40:41.610Z"
+      }
+    ]
+  },
+  {
+    "id": "0ede06a3-fac3-4a0a-b869-8086da351d08",
+    "title": "Commodity Code Inquiry",
+    "isIncognito": false,
+    "createdAt": "2026-03-16T14:41:42.141Z",
+    "updatedAt": "2026-03-16T14:41:50.866Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "hi i have commodity code 39269097 for an import, what would be the complete commodity code ?",
+        "timestamp": "2026-03-16T14:41:42.141Z"
+      },
+      {
+        "role": "assistant",
+        "text": "1. **HS / CN Code**: 3926 90 97 00\n2. **Official Description**: \"Andere\" (Other articles of plastics and articles of other materials of headings 3901 to 3914)\n3. **Classification Rationale**: This code falls under Chapter 39, which covers plastics and articles thereof. The specific subheading 3926 90 97 is used for other articles not specified elsewhere in the chapter.\n4. **Duty Rate**: 6.5%\n5. **Important Notes**: Ensure compliance with any specific import regulations or restrictions applicable to plastic articles.\n\n```customs-card\n{\"code\":\"3926 90 97 00\",\"description\":\"Andere\",\"duty\":\"6.5%\",\"certifiedAt\":\"2026-03-16\"}\n```\n\n```customs-tree\n{\"levels\":[{\"type\":\"SECTION\",\"id\":\"VII\",\"label\":\"Plastics and articles thereof; rubber and articles thereof\"},{\"type\":\"CHAPTER\",\"id\":\"39\",\"label\":\"Plastics and articles thereof\"},{\"type\":\"HEADING\",\"id\":\"3926\",\"label\":\"Other articles of plastics and articles of other materials of headings 3901 to 3914\"},{\"type\":\"SUBHEADING\",\"id\":\"3926 90\",\"label\":\"Other\"},{\"type\":\"CN CODE\",\"id\":\"3926 90 97\",\"label\":\"Andere\"}]}\n```",
+        "timestamp": "2026-03-16T14:41:50.866Z"
+      }
+    ]
+  },
+  {
+    "id": "62862eba-c813-47a7-9ce7-0600db95c499",
+    "title": "Commodity Code Inquiry",
+    "isIncognito": false,
+    "createdAt": "2026-03-16T14:51:43.124Z",
+    "updatedAt": "2026-03-16T14:52:16.975Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "hi i have commodity code 39269097 for an import, what would be the complete commodity code ?",
+        "timestamp": "2026-03-16T14:51:43.124Z"
+      },
+      {
+        "role": "assistant",
+        "text": "1. **HS / CN Code**: 3926 90 97 00\n2. **Official Description**: Andere\n3. **Classification Rationale**: This code falls under Chapter 39, which covers plastics and articles thereof. The specific heading 3926 includes other articles of plastics, and the subheading 39269097 is used for other unspecified articles.\n4. **Duty Rate**: 6.5%\n5. **Important Notes**: Ensure compliance with any specific import regulations or documentation requirements for plastic articles.",
+        "timestamp": "2026-03-16T14:51:47.184Z"
+      },
+      {
+        "role": "user",
+        "text": "Are there any specific regulations for this commodity?",
+        "timestamp": "2026-03-16T14:52:05.029Z"
+      },
+      {
+        "role": "assistant",
+        "text": "The search did not yield specific regulations directly related to the commodity code 39269097. However, here are some general considerations for importing articles of plastics under this code:\n\n1. **REACH Compliance**: Ensure that the plastic materials comply with the EU's REACH regulation, which governs the registration, evaluation, authorization, and restriction of chemicals.\n\n2. **CE Marking**: If the plastic articles are used in construction or as part of machinery, they may require CE marking to demonstrate compliance with EU safety, health, and environmental protection requirements.\n\n3. **Packaging and Waste**: Compliance with the EU Packaging and Packaging Waste Directive may be necessary, especially if the articles are packaged for retail.\n\n4. **Product-Specific Regulations**: Depending on the use of the plastic articles, there may be additional regulations, such as those for food contact materials or toys.\n\nFor precise legal obligations, it is advisable to consult with a customs expert or legal advisor familiar with EU import regulations. If you have more specific details about the product, I can assist further in identifying applicable regulations.",
+        "timestamp": "2026-03-16T14:52:16.975Z"
       }
     ]
   }

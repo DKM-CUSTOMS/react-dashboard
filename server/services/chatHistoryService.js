@@ -45,7 +45,7 @@ export function getChatSession(userIdentifier, chatId, namespace = 'hr') {
     return chats.find(c => c.id === chatId);
 }
 
-export function appendToChat(userIdentifier, chatId, role, text, isIncognito = false, namespace = 'hr') {
+export function appendToChat(userIdentifier, chatId, role, text, isIncognito = false, namespace = 'hr', attachments = []) {
     const chats = readUserChats(userIdentifier, namespace);
     let chat = chats.find(c => c.id === chatId);
 
@@ -67,6 +67,7 @@ export function appendToChat(userIdentifier, chatId, role, text, isIncognito = f
     chat.messages.push({
         role: role,
         text: text,
+        attachments: attachments,
         timestamp: new Date().toISOString()
     });
     chat.updatedAt = new Date().toISOString();

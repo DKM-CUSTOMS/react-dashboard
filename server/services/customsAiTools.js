@@ -74,7 +74,7 @@ export const searchGnNomenclatureTool = new DynamicStructuredTool({
             const desc = row.omschrijving.toLowerCase();
             const score = queryTokens.reduce((acc, tok) => acc + (desc.includes(tok) ? 1 : 0), 0);
             return { ...row, _score: score };
-        }).filter(r => r._score >= 2).sort((a, b) => b._score - a._score).slice(0, 8); // Top 8 matches
+        }).filter(r => r._score > 0).sort((a, b) => b._score - a._score).slice(0, 15); // Top 15 matches
 
         if (scoredRows.length === 0) {
             return "No matching descriptions found in GN 2026 nomenclature for the given query terms.\nProceeding to Stage 1 internet research.";

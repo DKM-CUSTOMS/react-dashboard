@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowUp, Plus, Sparkles, ChevronDown, MessageSquare, Trash2, EyeOff, Menu, X, Copy, Check, Download, ShieldCheck, Award, Layers, Info, Calendar, ExternalLink } from 'lucide-react';
+import { ArrowUp, Plus, Sparkles, ChevronDown, MessageSquare, Trash2, EyeOff, Menu, X, Copy, Check, Download, ShieldCheck, Award, Layers, Info, Calendar, ExternalLink, Paperclip, FileText, ImageIcon, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -23,9 +23,12 @@ export default function CustomsAiChatbotPage() {
     const [isRestoring, setIsRestoring] = useState(true);
     const [copiedIndex, setCopiedIndex] = useState(null);
     const [followUpPills, setFollowUpPills] = useState([]);
+    const [attachments, setAttachments] = useState([]);
+    const [isUploading, setIsUploading] = useState(false);
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+    const fileInputRef = useRef(null);
     const userEmail = user?.email || user?.username || '';
     const userName = user?.name || user?.user || 'Declarant';
 
@@ -148,6 +151,65 @@ export default function CustomsAiChatbotPage() {
         }
     };
 
+    const processFile = (file) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const base64 = re.target.result.split(',')[1];
+                const type = file.type;
+                const name = file.name || `snapshot-${Date.now()}.png`;
+                const url = re.target.result;
+                resolve({ name, type, base64, url });
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleFileChange = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        setIsUploading(true);
+        const newAttachments = [...attachments];
+
+        for (const file of files) {
+            const attachment = await processFile(file);
+            newAttachments.push(attachment);
+        }
+
+        setAttachments(newAttachments);
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handlePaste = async (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        const filesToProcess = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) filesToProcess.push(file);
+            }
+        }
+
+        if (filesToProcess.length > 0) {
+            setIsUploading(true);
+            const newAttachments = [...attachments];
+            for (const file of filesToProcess) {
+                const attachment = await processFile(file);
+                newAttachments.push(attachment);
+            }
+            setAttachments(newAttachments);
+            setIsUploading(false);
+        }
+    };
+
+    const removeAttachment = (index) => {
+        setAttachments(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSend = async (e) => {
         e?.preventDefault();
         if (!input.trim() || isLoading) return;
@@ -162,10 +224,13 @@ export default function CustomsAiChatbotPage() {
             setChatId(currentChatId);
         }
 
-        const newMessages = [...messages, { role: 'user', text: userMsg }];
+        const newMessages = [...messages, { role: 'user', text: userMsg, attachments: [...attachments] }];
         setMessages(newMessages);
         setIsLoading(true);
         setFollowUpPills([]);
+
+        const currentAttachments = [...attachments];
+        setAttachments([]);
 
         try {
             const chat_history = newMessages.slice(0, -1).map(m =>
@@ -180,7 +245,9 @@ export default function CustomsAiChatbotPage() {
                     user_name: userEmail,
                     chatId: currentChatId,
                     isIncognito,
-                    chat_history
+                    chat_history,
+                    images: currentAttachments.filter(a => a.type.startsWith('image/')),
+                    files: currentAttachments.filter(a => a.type === 'application/pdf')
                 })
             });
 
@@ -293,147 +360,6 @@ export default function CustomsAiChatbotPage() {
         h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-5 mb-2 text-[#111]" {...props} />,
         h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-4 mb-2 text-[#111]" {...props} />,
         code({ node, inline, className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '');
-            const language = match ? match[1] : '';
-
-            // 1. GENERATIVE UI - CUSTOMS LICENSE CARD
-            if (!inline && language === 'customs-card') {
-                try {
-                    const cardData = JSON.parse(String(children).replace(/\n$/, ''));
-                    return (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="my-6 relative border-2 border-primary/20 rounded-2xl overflow-hidden bg-white shadow-xl shadow-primary/5"
-                        >
-                            {/* Certificate Side Accent */}
-                            <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-primary via-primary/60 to-primary/20" />
-
-                            <div className="p-6">
-                                <div className="flex items-start justify-between mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
-                                            <ShieldCheck size={28} />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-gray-900 leading-none">Customs Classification Certificate</h4>
-                                            <p className="text-[12px] text-gray-500 mt-1 uppercase tracking-wider font-semibold">Authorized by DKM Intelligence</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col items-end">
-                                        <Award className="text-yellow-500/30" size={40} strokeWidth={1} />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
-                                    <div className="space-y-1">
-                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">HS / CN CODE</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-2xl font-mono font-bold text-primary tracking-tight">{cardData.code}</span>
-                                            <div className="px-1.5 py-0.5 bg-green-50 text-green-600 text-[10px] font-bold rounded border border-green-100 italic">VERIFIED</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">DUTY RATE</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-2xl font-bold text-gray-900">{cardData.duty}</span>
-                                            <p className="text-[10px] text-gray-400 leading-tight">Subject to TARIC quotas and anti-dumping</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="col-span-1 md:col-span-2 space-y-2">
-                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">OFFICIAL DESCRIPTION</span>
-                                        <p className="text-[14px] leading-relaxed text-gray-700 bg-gray-50/80 p-3 rounded-lg border border-gray-100 italic">
-                                            "{cardData.description}"
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="pt-6 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-1.5 text-gray-500 text-[12px]">
-                                            <Calendar size={14} />
-                                            <span>Issued: {cardData.certifiedAt || new Date().toLocaleDateString()}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-gray-500 text-[12px]">
-                                            <Info size={14} />
-                                            <span>Origin: EU Nomenclature 2026</span>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={() => {
-                                            const content = `DKM CUSTOMS CLASSIFICATION\n--------------------------\nCODE: ${cardData.code}\nDUTY: ${cardData.duty}\nDESC: ${cardData.description}\nISSUED: ${cardData.certifiedAt}`;
-                                            const blob = new Blob([content], { type: 'text/plain' });
-                                            const url = URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `Classification_${cardData.code}.txt`;
-                                            a.click();
-                                        }}
-                                        className="flex items-center gap-2 bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-all transform active:scale-95 shadow-lg shadow-primary/20"
-                                    >
-                                        <Download size={15} /> Export PDF/Print
-                                    </button>
-                                </div>
-                            </div>
-                        </motion.div>
-                    );
-                } catch (e) { console.error("Card error", e); }
-            }
-
-            // 2. GENERATIVE UI - KNOWLEDGE TREE (HIERARCHY VISUALIZATION)
-            if (!inline && language === 'customs-tree') {
-                try {
-                    const treeData = JSON.parse(String(children).replace(/\n$/, ''));
-                    return (
-                        <div className="my-6 border border-gray-200 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-gray-50/30">
-                            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-gray-700">
-                                    <Layers size={16} />
-                                    <span className="text-[13px] font-bold uppercase tracking-wider">Classification Hierarchy</span>
-                                </div>
-                                <div className="text-[11px] text-gray-400 font-medium">Click to expand legal notes</div>
-                            </div>
-                            <div className="p-5 overflow-x-auto">
-                                <div className="flex flex-col gap-2 min-w-[300px]">
-                                    {treeData.levels?.map((level, i) => (
-                                        <React.Fragment key={i}>
-                                            <motion.div
-                                                initial={{ x: -10, opacity: 0 }}
-                                                animate={{ x: 0, opacity: 1 }}
-                                                transition={{ delay: i * 0.1 }}
-                                                className={`flex items-start gap-4 p-3 rounded-xl border transition-all ${i === treeData.levels.length - 1
-                                                    ? 'bg-primary/5 border-primary/20 shadow-sm'
-                                                    : 'bg-white border-gray-100 hover:border-gray-300'
-                                                    }`}
-                                            >
-                                                <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${i === treeData.levels.length - 1 ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                                    <span className="text-[12px] font-bold">{level.id || (i + 1)}</span>
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">{level.type}</span>
-                                                        {level.link && <ExternalLink size={12} className="text-primary hover:text-primary-dark cursor-pointer" />}
-                                                    </div>
-                                                    <p className={`text-[13px] leading-snug truncate-2-lines ${i === treeData.levels.length - 1 ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
-                                                        {level.label}
-                                                    </p>
-                                                </div>
-                                            </motion.div>
-                                            {i < treeData.levels.length - 1 && (
-                                                <div className="ml-7 w-px h-3 bg-gray-200" />
-                                            )}
-                                        </React.Fragment>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                } catch (e) { console.error("Tree error", e); }
-            }
-
             return inline ? (
                 <code className="bg-[#f0f0f0] text-[#c7254e] px-1.5 py-0.5 rounded text-[13px] font-mono" {...props}>
                     {children}
@@ -456,6 +382,30 @@ export default function CustomsAiChatbotPage() {
     const renderInputBox = (placeholder = 'Describe a product or enter an HS/CN code...') => (
         <div className="w-full max-w-[48rem] mx-auto">
             <div className="border border-[#d9d9d9] rounded-2xl bg-white focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-colors overflow-hidden">
+                {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 p-3 border-b border-gray-100 bg-gray-50/30">
+                        {attachments.map((file, idx) => (
+                            <div key={idx} className="relative group bg-white border border-gray-200 rounded-lg p-2 flex items-center gap-2 shadow-sm pr-8">
+                                {file.type.startsWith('image/') ? (
+                                    <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden">
+                                        <img src={file.url} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                ) : (
+                                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded">
+                                        <FileText size={16} />
+                                    </div>
+                                )}
+                                <span className="text-[12px] font-medium text-gray-700 truncate max-w-[120px]">{file.name}</span>
+                                <button
+                                    onClick={() => removeAttachment(idx)}
+                                    className="absolute right-1 top-1 text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <textarea
                     ref={inputRef}
                     value={input}
@@ -463,15 +413,34 @@ export default function CustomsAiChatbotPage() {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                     }}
+                    onPaste={handlePaste}
                     placeholder={placeholder}
                     className="w-full bg-transparent min-h-[44px] max-h-[200px] text-[15px] resize-none px-4 pt-3 pb-1 focus:outline-none placeholder:text-[#999] text-[#2d2d2d]"
                     disabled={isLoading}
                     rows={1}
                 />
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleFileChange}
+                    multiple
+                    accept="image/*,application/pdf,text/csv,text/plain"
+                />
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-                    <button onClick={handleNewChat} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a7a7a] hover:bg-[#f2f2f2] transition-colors" title="New classification">
-                        <Plus size={18} strokeWidth={2} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                        <button onClick={handleNewChat} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a7a7a] hover:bg-[#f2f2f2] transition-colors" title="New classification">
+                            <Plus size={18} strokeWidth={2} />
+                        </button>
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isLoading || isUploading}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a7a7a] hover:bg-[#f2f2f2] transition-colors"
+                            title="Attach product photo or invoice/packing list"
+                        >
+                            {isUploading ? <Loader2 size={18} className="animate-spin text-primary" /> : <Paperclip size={18} />}
+                        </button>
+                    </div>
                     <div className="flex items-center gap-2">
                         {isIncognito && (
                             <span className="flex items-center gap-1 text-[12px] text-gray-500 font-medium px-2 bg-gray-100 rounded-full h-6">
@@ -484,8 +453,8 @@ export default function CustomsAiChatbotPage() {
                         </button>
                         <button
                             onClick={handleSend}
-                            disabled={!input.trim() || isLoading}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${!input.trim() || isLoading
+                            disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${(!input.trim() && attachments.length === 0) || isLoading
                                 ? 'text-[#c5c5c5] cursor-not-allowed'
                                 : 'bg-primary text-white hover:bg-primary-dark'
                                 }`}
@@ -645,6 +614,29 @@ export default function CustomsAiChatbotPage() {
                                             {m.role === 'user' ? (
                                                 <div className="flex justify-end">
                                                     <div className="max-w-[80%] px-4 py-3 bg-[#f4f4f4] text-[#2d2d2d] rounded-3xl text-[15px] leading-[1.6] whitespace-pre-wrap">
+                                                        {m.attachments?.length > 0 && (
+                                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                                {m.attachments.map((file, idx) => (
+                                                                    <div key={idx} className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl p-2 flex items-center gap-2 max-w-full overflow-hidden">
+                                                                        {file.type?.startsWith('image/') ? (
+                                                                            <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+                                                                                <img src={file.url} alt="" className="w-full h-full object-cover" />
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                                                                                <FileText size={20} />
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="min-w-0 pr-2">
+                                                                            <p className="text-[12px] font-bold text-gray-900 truncate">{file.name}</p>
+                                                                            <p className="text-[10px] text-gray-500 uppercase tracking-tighter">
+                                                                                {file.type?.startsWith('image/') ? 'Product Photo' : 'Document'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                         {m.text}
                                                     </div>
                                                 </div>

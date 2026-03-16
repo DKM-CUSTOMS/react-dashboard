@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "id": "55d3a66c-18ee-476e-9043-7bfdbe1bc533",
+    "title": "Import Team Schedule",
+    "isIncognito": false,
+    "createdAt": "2026-03-16T11:23:28.893Z",
+    "updatedAt": "2026-03-16T11:23:34.601Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Who is on the import team this week?",
+        "timestamp": "2026-03-16T11:23:28.893Z"
+      },
+      {
+        "role": "assistant",
+        "text": "The members of the **IMPORT team** this week are:\n\n- Fadwa Erraziki\n- Ayoub Souriste\n- Aymane Berrioau\n- Sana Idrissi\n- Amina Saiss\n- Khadija Oufkir\n- Zohra Hmoudou\n- Simo Onsi\n- Youssef Assabir\n- Aboulhassan Amina\n- Adriana Slavova\n\nPlease note that there are no activity logs recorded for this week yet.",
+        "timestamp": "2026-03-16T11:23:34.601Z"
+      }
+    ]
+  }
+]

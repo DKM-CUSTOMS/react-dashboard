@@ -12,6 +12,9 @@ import {
 import { logAiChat } from "../services/chatLogger.js";
 import { getUserChatSessions, getChatSession, appendToChat, deleteChatSession, updateChatTitle } from "../services/chatHistoryService.js";
 import crypto from 'crypto';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdf = require('pdf-parse');
 
 const router = express.Router();
 
@@ -36,42 +39,60 @@ export async function initializeAgent() {
         "You are Alex, a senior licensed customs declarant at DKM Customs. Your specialisation is EU tariff classification under the Combined Nomenclature (CN) / GN 2026.",
         "",
         "--- PERSONA ---",
-        "You are precise, professional, and never guess. You only cite codes you have verified.",
+        "You are precise, professional, and helpful. You never guess.",
+        "Crucially, if a user asks a broad question (like 'what is the hs of a sofa' or 'shoes'), do NOT reject the request or immediately ask for details.",
+        "Instead, search the nomenclature, explore the heading, provide a structured overview of the common classifications, and ONLY THEN ask the user for the specific details needed to narrow it down.",
         "",
-        "--- OUTPUT FORMAT ---",
-        "Your final response MUST follow this structure:",
+        "--- VISION & DOCUMENT CAPABILITIES ---",
+        "1. **Product Photos**: You can now see images of products. If a user uploads a photo, analyze the material, shape, and function. Use this visual evidence to suggest the most likely HS/CN headings.",
+        "2. **Invoice/Packing List Parsing**: If a PDF or text document is attached, you will receive its contents. You should extract all relevant product line-items from the document and provide HS code suggestions for the entire shipment in a structured markdown table.",
+        "",
+        "--- OUTPUT FORMAT FOR BROAD QUERIES ---",
+        "When providing an overview for a broad query, you MUST use this visually appealing markdown structure:",
+        "",
+        "**Product Description**",
+        "[Brief description of the product based on the heading]",
+        "",
+        "**Classification — CN Heading [Heading Code]**",
+        "The correct code depends on [factors like material, use, etc.]:",
+        "",
+        "🪵 [Category 1 (e.g., Wooden frame)]",
+        "| Code | Description | Duty |",
+        "|------|-------------|------|",
+        "| ...  | ...         | ...  |",
+        "",
+        "🔩 [Category 2 (e.g., Metal frame)]",
+        "| Code | Description | Duty |",
+        "|------|-------------|------|",
+        "| ...  | ...         | ...  |",
+        "",
+        "**TARIC (10-digit)**",
+        "Provide a few standard 10-digit default options for the user.",
+        "",
+        "**Explanation**",
+        "Briefly explain the heading subdivisions.",
+        "",
+        "**Sources used**",
+        "✅ DKM internal dataset (GN_nomenclatuur_2026)",
+        "ℹ️ Verification: EU TARIC",
+        "⚠️ To confirm the exact code, please provide [missing detail 1] and [missing detail 2].",
+        "",
+        "--- OUTPUT FORMAT FOR SPECIFIC/FINALIZED QUERIES ---",
+        "If you have enough detail to pinpoint an EXACT final classification, use this structure:",
         "1. **HS / CN Code**: The confirmed 10-digit code (e.g. 8529 90 96 00)",
         "2. **Official Description**: Exact description from the nomenclature.",
         "3. **Classification Rationale**: A brief 2-3 sentence explanation citing the relevant Chapters, Notes, or Headings.",
         "4. **Duty Rate**: The exact rate from the GN 2026 database.",
         "5. **Important Notes**: Any VAT, anti-dumping, or quota considerations if relevant.",
         "",
-        "--- GENERATIVE UI COMPONENTS ---",
-        "You MUST use these components for every finalized classification to provide a premium UX:",
-        "",
-        "1. **Classification Certificate (language: customs-card)**:",
-        "Output a JSON block that renders a certified document. Example:",
-        "```customs-card",
-        '{"code":"8529 90 96 00","description":"Parts suitable for use solely or principally...","duty":"3.7%","certifiedAt":"2026-03-16"}',
-        "```",
-        "",
-        "2. **Knowledge Tree (language: customs-tree)**:",
-        "Visualize the hierarchy from Section down to the specific Subheading. Example:",
-        "```customs-tree",
-        '{"levels":[{"type":"SECTION","id":"XVI","label":"Machinery and mechanical appliances..."},{"type":"CHAPTER","id":"85","label":"Electrical machinery and equipment..."},{"type":"HEADING","id":"8529","label":"Parts suitable for use solely or principally..."},{"type":"SUBHEADING","id":"8529 90 92","label":"For television cameras..."}]}',
-        "```",
-        "",
         "--- REQUIRED WORKFLOW (CRITICAL - FOLLOW IN ORDER) ---",
-        "For EVERY product classification request:",
-        "  STEP 1: Call search_gn_nomenclature with relevant keywords from the product description.",
-        "  STEP 2: Call lookup_cn_code_in_nomenclature to verify the candidate code(s) and retrieve the official duty rate.",
-        "  STEP 3: If legal context is needed, call search_eurlex_customs for Chapter or Section notes.",
+        "  STEP 1: Call search_gn_nomenclature. NOTE: The database terminology is entirely in DUTCH. You MUST translate English keywords into DUTCH before searching (e.g., 'sofa' -> 'zitmeubelen' or 'bank', 'wood' -> 'hout', 'apple' -> 'appelen'). Provide single, strong Dutch keywords for the best results.",
+        "  STEP 2: Use lookup_cn_code_in_nomenclature to verify candidate codes, discover subcategories, and retrieve official duty rates.",
+        "  STEP 3: Format the response appropriately as explained above.",
+        "  STEP 4: If legal context is needed, call search_eurlex_customs.",
         "",
         "NEVER HALLUCINATE DUTY RATES. Always confirm via lookup_cn_code_in_nomenclature.",
-        "NEVER invent codes. If a code is not found in the CSV, say so explicitly.",
-        "",
-        "If the user has NOT provided a product description:",
-        "Respond: 'Please provide the product description so I can begin the classification.'"
+        "NEVER invent codes. If a code is not found, say so explicitly."
     ].join("\n");
 
     const prompt = ChatPromptTemplate.fromMessages([
@@ -90,17 +111,62 @@ export async function initializeAgent() {
 
 router.post("/ask", async (req, res) => {
     try {
-        const { message, chat_history, chatId, isIncognito, user_name } = req.body;
+        const { message, chat_history, chatId, isIncognito, user_name, images, files } = req.body;
 
-        if (!message) {
-            return res.status(400).json({ error: "Message is required" });
+        if (!message && (!images || images.length === 0) && (!files || files.length === 0)) {
+            return res.status(400).json({ error: "Message or attachment is required" });
+        }
+
+        let processedMessage = message || "";
+        const attachments = [];
+
+        // 1. Process Files if any (PDF, CSV, TEXT)
+        if (files && files.length > 0) {
+            for (const f of files) {
+                try {
+                    const buffer = Buffer.from(f.base64, 'base64');
+                    let content = "";
+                    
+                    if (f.type === 'application/pdf') {
+                        const pdfData = await pdf(buffer);
+                        content = pdfData.text;
+                        attachments.push({ type: 'pdf', name: f.name });
+                    } else if (f.type === 'text/csv' || f.name.endsWith('.csv')) {
+                        content = buffer.toString('utf-8');
+                        attachments.push({ type: 'csv', name: f.name });
+                    } else if (f.type === 'text/plain' || f.name.endsWith('.txt')) {
+                        content = buffer.toString('utf-8');
+                        attachments.push({ type: 'text', name: f.name });
+                    }
+
+                    if (content) {
+                        processedMessage += `\n\n[ATTACHED DOCUMENT (${f.name})]:\n${content}`;
+                    }
+                } catch (err) {
+                    console.error(`File Parsing Error (${f.name}):`, err);
+                    processedMessage += `\n\n(Error parsing file: ${f.name})`;
+                }
+            }
+        }
+
+        // 2. Prepare Vision Content if images exist
+        let chatInput = processedMessage;
+        if (images && images.length > 0) {
+            chatInput = [
+                { type: "text", text: processedMessage },
+                ...images.map(img => ({
+                    type: "image_url",
+                    image_url: { url: img.url } // Assuming data URL from frontend
+                }))
+            ];
+            images.forEach(img => attachments.push({ type: 'image', name: img.name || 'Image' }));
         }
 
         const activeChatId = chatId || crypto.randomUUID();
 
         // Persist user message
         if (user_name && !isIncognito) {
-            appendToChat(user_name, activeChatId, 'user', message, isIncognito, 'customs');
+            appendToChat(user_name, activeChatId, 'user', message || "(Attached files)", isIncognito, 'customs', attachments);
         }
 
         const executor = await initializeAgent();
@@ -118,7 +184,7 @@ router.post("/ask", async (req, res) => {
         });
 
         const eventStream = await executor.streamEvents({
-            input: message,
+            input: chatInput,
             chat_history: formattedHistory
         }, { version: "v2" });
 
