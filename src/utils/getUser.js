@@ -8,13 +8,24 @@ const roleClaimTypes = [
   'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role',
 ];
 
+async function getDbRoles() {
+  try {
+    const res = await fetch('/api/user-roles/me');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.roles) ? data.roles : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getUser() {
   const isDev = import.meta.env.DEV;
   const url = isDev ? '/.auth/me.json' : '/.auth/me';
 
   try {
     const res = await fetch(url);
-    
+
     if (!res.ok) throw new Error('User not authenticated');
     const data = await res.json();
     const claims = data[0]?.user_claims || [];
@@ -33,9 +44,12 @@ export async function getUser() {
       .map(r => r.trim())
       .filter(Boolean);
 
-    const manualRoles = userRoleMap[email?.toLowerCase()] || [];
+    // DB roles (primary source) — fall back to roleConfig.js if empty
+    const dbRoles = await getDbRoles();
+    const fallbackRoles = dbRoles.length > 0 ? [] : (userRoleMap[email?.toLowerCase()] || []);
+
     const roles = Array.from(
-      new Set([...(defaultAuthenticatedRoles || []), ...rolesFromClaims, ...manualRoles]),
+      new Set([...(defaultAuthenticatedRoles || []), ...rolesFromClaims, ...dbRoles, ...fallbackRoles]),
     );
 
     return { name, email, id, roles };

@@ -12,6 +12,7 @@ import monitoringRoutes from './server/routes/monitoring.js';
 import hrAiRoutes from './server/routes/hrAi.js';
 import customsAiRoutes from './server/routes/customsAi.js';
 import customInstructionsRoutes from './server/routes/customInstructions.js';
+import userRolesRoutes from './server/routes/userRoles.js';
 import { hydrateAzureCache } from './server/services/hrAiTools.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
@@ -338,6 +339,7 @@ app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/statistics/ai', hrAiRoutes);
 app.use('/api/statistics/customs', customsAiRoutes);
 app.use('/api/ai/instructions', customInstructionsRoutes);
+app.use('/api/user-roles', userRolesRoutes);
 
 // ============================================================
 // Database Debugging Tools (VNet Proxy)

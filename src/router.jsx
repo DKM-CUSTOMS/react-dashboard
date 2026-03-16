@@ -24,6 +24,7 @@ import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
 import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
 import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
 import RequireRole from './components/auth/RequireRole';
+import UserRolesPage from './pages/admin/UserRolesPage';
 
 const withAccess = (element, allowedRoles) => (
   <RequireRole allowed={allowedRoles}>{element}</RequireRole>
@@ -98,6 +99,7 @@ const router = createBrowserRouter([
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added
       { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['developer']) },
+      { path: 'admin/user-roles', element: withAccess(<UserRolesPage />, ['developer']) },
     ],
     errorElement: <NotFound />,
   },

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "6ed87ab1-671a-491f-ae28-38eedef6f54d",
+    "title": "HS Code Confirmation Request",
+    "isIncognito": false,
+    "createdAt": "2026-03-16T09:54:40.576Z",
+    "updatedAt": "2026-03-16T09:54:45.380Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Hi, Please confirm this complete hs code: 8529909090 => 8529 90 96 00 double check",
+        "timestamp": "2026-03-16T09:54:40.576Z"
+      },
+      {
+        "role": "assistant",
+        "text": "The code \"8529909090\" does not exist as a terminal code in the Combined Nomenclature. However, the parent category \"852990\" does exist, and here are some valid sub-categories under it:\n\n- **85299015**: Organische modules met luminescentiedioden en organische...\n- **85299030**: Elektronische assemblages vrij...\n- **85299093**: Voor toestellen bedoeld bij de posten 8527 en 8528 vrij...\n- **85299096**: Andere vrij...\n\nPlease provide more details about the product to determine the correct sub-category.",
+        "timestamp": "2026-03-16T09:54:45.380Z"
+      }
+    ]
+  }
+]
