@@ -22,6 +22,7 @@ import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
 import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
 import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
 import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
+import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
 import RequireRole from './components/auth/RequireRole';
 
 const withAccess = (element, allowedRoles) => (
@@ -76,6 +77,10 @@ const router = createBrowserRouter([
       {
         path: 'statistics/ai-chat',
         element: withAccess(<AiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator']),
+      },
+      {
+        path: 'statistics/customs-agent',
+        element: withAccess(<CustomsAiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator']),
       },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {

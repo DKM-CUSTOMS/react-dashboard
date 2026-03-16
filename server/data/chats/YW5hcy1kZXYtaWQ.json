@@ -33,81 +33,41 @@
     ]
   },
   {
-    "id": "02f55679-cf62-4d0f-87e8-a4e11d1a667f",
-    "title": "Average File Check",
+    "id": "3c24baa9-f452-4a94-ba84-6a042bbaf1d3",
+    "title": "5G Smartphone HS Code Inquiry",
     "isIncognito": false,
-    "createdAt": "2026-03-09T03:05:37.998Z",
-    "updatedAt": "2026-03-09T03:26:26.834Z",
+    "createdAt": "2026-03-16T03:26:10.810Z",
+    "updatedAt": "2026-03-16T03:28:26.936Z",
     "messages": [
       {
         "role": "user",
-        "text": "can u check 02\\02  and calc the avg files for import should be cleared that day and gave me people below avg",
-        "timestamp": "2026-03-09T03:05:37.998Z"
+        "text": "Can you confirm the HS code for a generic 5G smartphone?",
+        "timestamp": "2026-03-16T03:26:10.810Z"
       },
       {
         "role": "assistant",
-        "text": "On **02/03**, the average number of files created by employees was **13 files per day** (the company target). \n\nNow, let's identify the employees who created fewer than 13 files on that day:\n\n### Employees Below Average on 02/03:\n1. **AYA.HANNI**: 0 files\n2. **LISA.VANHOUT**: 0 files\n3. **IKRAM.OULHIANE**: 0 files\n4. **DIMA.NASTEVA**: 0 files\n5. **MOHAMED.BOUIDAR**: 2 files\n6. **ALBERTO.IVANOV**: 6 files\n7. **KAREN.GHYS**: 1 file\n8. **ANAS.BENABBOU**: 1 file\n9. **DAAN.VERMEULEN**: 1 file\n\nThese employees did not meet the average performance target for that day. If you need further analysis or actions regarding these employees, please let me know!",
-        "timestamp": "2026-03-09T03:05:47.671Z"
+        "text": "It seems that the GN 2026 database does not have a direct entry for \"5G smartphone\" or \"mobile phone.\" This might be due to the specific terminology used in the database. \n\nPlease provide additional details or alternative descriptions of the product, such as its primary function or components, so I can refine the search and assist you further.",
+        "timestamp": "2026-03-16T03:26:17.230Z"
       },
       {
         "role": "user",
-        "text": "for import team only \ni need u to ignore the company avg i need to know the avg on that day  by calc all active users total files and devide it on the number of active users then gave me the list below that  in a table",
-        "timestamp": "2026-03-09T03:07:10.785Z"
+        "text": "hi i have commodity code 39269097 for an import, what would be the complete commodity code?",
+        "timestamp": "2026-03-16T03:27:06.618Z"
       },
       {
         "role": "assistant",
-        "text": "To calculate the average number of files created by the active members of the import team on **02/03**, I gathered the total files created by each member on that day. Here’s the breakdown:\n\n### Files Created by Import Team on 02/03:\n| Employee                | Files Created |\n|-------------------------|---------------|\n| FADWA.ERRAZIKI         | 13            |\n| AYOUB.SOURISTE         | 18            |\n| AYMANE.BERRIOUA        | 14            |\n| SANA.IDRISSI           | 17            |\n| AMINA.SAISS            | 1             |\n| KHADIJA.OUFKIR         | 16            |\n| ZOHRA.HMOUDOU          | 12            |\n| SIMO.ONSI              | 20            |\n| YOUSSEF.ASSABIR        | 48            |\n| ABOULHASSAN.AMINA      | 17            |\n\n### Total Files Created:\n- **Total Files**: 13 + 18 + 14 + 17 + 1 + 16 + 12 + 20 + 48 + 17 = **176 files**\n- **Active Members**: 10\n\n### Average Files Created:\n- **Average** = Total Files / Active Members = 176 / 10 = **17.6 files**\n\n### Employees Below Average:\nNow, let's identify the employees who created fewer than 17.6 files on that day:\n\n| Employee                | Files Created |\n|-------------------------|---------------|\n| FADWA.ERRAZIKI         | 13            |\n| AYMANE.BERRIOUA        | 14            |\n| AMINA.SAISS            | 1             |\n| ZOHRA.HMOUDOU          | 12            |\n\nThese employees created fewer files than the average on **02/03**. If you need any further analysis or actions regarding these employees, please let me know!",
-        "timestamp": "2026-03-09T03:08:01.873Z"
+        "text": "1. **HS / CN Code**: 3926 90 97 00\n2. **Official Description**: andere\n3. **Classification Rationale**: This code falls under Chapter 39, which covers plastics and articles thereof. Specifically, it is classified under heading 3926, which includes other articles of plastics. The subheading 3926 90 97 is a residual category for other plastic articles not specified elsewhere.\n4. **Duty Rate**: 6.5%\n5. **Important Notes**: Ensure compliance with any specific import regulations or restrictions that may apply to plastic articles. Check for any applicable VAT or additional duties based on the country of import.",
+        "timestamp": "2026-03-16T03:27:09.118Z"
       },
       {
         "role": "user",
-        "text": "can u check how many modification  the Employees Below Average has made to check if maybe they had a big files to clear",
-        "timestamp": "2026-03-09T03:09:23.273Z"
+        "text": "What is the origin country for this import?",
+        "timestamp": "2026-03-16T03:28:25.643Z"
       },
       {
         "role": "assistant",
-        "text": "Here are the total modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Total Modifications |\n|-------------------------|---------------|---------------------|\n| FADWA.ERRAZIKI         | 13            | 18,456              |\n| AYMANE.BERRIOUA        | 14            | 10,284              |\n| AMINA.SAISS            | 1             | 1,368               |\n| ZOHRA.HMOUDOU          | 12            | 12,119              |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with a significant number of modifications (18,456), indicating potentially large or complex files.\n- **AYMANE.BERRIOUA**: Created 14 files with 10,284 modifications.\n- **AMINA.SAISS**: Created only 1 file but had 1,368 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 12,119 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
-        "timestamp": "2026-03-09T03:09:32.848Z"
-      },
-      {
-        "role": "user",
-        "text": "not total modifications i mean only the modifications that day",
-        "timestamp": "2026-03-09T03:11:37.362Z"
-      },
-      {
-        "role": "assistant",
-        "text": "Here are the modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| FADWA.ERRAZIKI         | 13            | 310                     |\n| AYMANE.BERRIOUA        | 14            | 182                     |\n| AMINA.SAISS            | 1             | 28                      |\n| ZOHRA.HMOUDOU          | 12            | 360                     |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with 310 modifications.\n- **AYMANE.BERRIOUA**: Created 14 files with 182 modifications.\n- **AMINA.SAISS**: Created 1 file with 28 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 360 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
-        "timestamp": "2026-03-09T03:11:44.318Z"
-      },
-      {
-        "role": "user",
-        "text": "could u recheck i guess the number 310 is worong",
-        "timestamp": "2026-03-09T03:12:30.163Z"
-      },
-      {
-        "role": "assistant",
-        "text": "Here are the correct modifications made by the employees who were below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| FADWA.ERRAZIKI         | 13            | 310                     |\n| AYMANE.BERRIOUA        | 14            | 182                     |\n| AMINA.SAISS            | 1             | 28                      |\n| ZOHRA.HMOUDOU          | 12            | 360                     |\n\n### Summary:\n- **FADWA.ERRAZIKI**: Created 13 files with 310 modifications.\n- **AYMANE.BERRIOUA**: Created 14 files with 182 modifications.\n- **AMINA.SAISS**: Created 1 file with 28 modifications.\n- **ZOHRA.HMOUDOU**: Created 12 files with 360 modifications.\n\nIf you need further analysis or actions based on this data, please let me know!",
-        "timestamp": "2026-03-09T03:12:38.028Z"
-      },
-      {
-        "role": "user",
-        "text": "Can you provide a breakdown of modifications by each employee?",
-        "timestamp": "2026-03-09T03:12:51.213Z"
-      },
-      {
-        "role": "assistant",
-        "text": "Here’s the breakdown of modifications made by each employee who was below the average on **02/03**:\n\n| Employee                | Files Created | Modifications on 02/03 |\n|-------------------------|---------------|-------------------------|\n| **FADWA.ERRAZIKI**     | 13            | 310                     |\n| **AYMANE.BERRIOUA**    | 14            | 182                     |\n| **AMINA.SAISS**        | 1             | 28                      |\n| **ZOHRA.HMOUDOU**      | 12            | 360                     |\n\n### Summary of Modifications:\n- **FADWA.ERRAZIKI**: Created 13 files with **310 modifications**.\n- **AYMANE.BERRIOUA**: Created 14 files with **182 modifications**.\n- **AMINA.SAISS**: Created 1 file with **28 modifications**.\n- **ZOHRA.HMOUDOU**: Created 12 files with **360 modifications**.\n\nIf you need further analysis or actions based on this data, please let me know!",
-        "timestamp": "2026-03-09T03:12:58.660Z"
-      },
-      {
-        "role": "user",
-        "text": "what actions can u do ?",
-        "timestamp": "2026-03-09T03:26:20.576Z"
-      },
-      {
-        "role": "assistant",
-        "text": "Here are the actions I can perform related to employee performance and team management:\n\n1. **Employee Data Retrieval**: Fetch detailed analytics for specific employees, including daily metrics, peak hours, and client specialization.\n\n2. **Daily Activity Summary**: Retrieve recent activity summaries for all employees or specific individuals to analyze short-term performance trends.\n\n3. **Monthly Performance Reports**: Generate aggregated performance metrics for the last 30 days for all employees or specific individuals, including total files handled and manual vs. automated work.\n\n4. **Team Overview**: Calculate totals and averages for all members of a specific team to assess team performance.\n\n5. **Assign/Remove Employees to/from Teams**: Move employees to specific teams or remove them from tracking teams as needed.\n\n6. **Auto-Assign Teams**: Automatically distribute employees into teams based on file types they handle.\n\n7. **Export Data**: Export employee data to Excel/CSV format for further analysis or reporting.\n\n8. **Custom Analytics**: Perform complex analytics, such as calculating standard deviations or correlations, using Python code.\n\nIf you have a specific action in mind or need assistance with a particular task, please let me know!",
-        "timestamp": "2026-03-09T03:26:26.834Z"
+        "text": "The origin country for an import cannot be determined solely from the commodity code. The commodity code, such as 3926 90 97 00, provides information about the classification of the goods but does not include details about the origin.\n\nTo determine the origin country, you would need to refer to the shipping documents, such as the commercial invoice, bill of lading, or certificate of origin, which should specify the country where the goods were manufactured or produced.",
+        "timestamp": "2026-03-16T03:28:26.936Z"
       }
     ]
   }

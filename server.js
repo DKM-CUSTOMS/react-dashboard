@@ -10,6 +10,7 @@ import declarationRoutes from './server/routes/declarations.js';
 import teamRoutes from './server/routes/teams.js';
 import monitoringRoutes from './server/routes/monitoring.js';
 import hrAiRoutes from './server/routes/hrAi.js';
+import customsAiRoutes from './server/routes/customsAi.js';
 import customInstructionsRoutes from './server/routes/customInstructions.js';
 import { hydrateAzureCache } from './server/services/hrAiTools.js';
 
@@ -289,7 +290,7 @@ app.get('/api/users/azure', async (req, res) => {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-        return res.status(response.status).json({ error: `Azure Function returned status ${response.status}` });
+      return res.status(response.status).json({ error: `Azure Function returned status ${response.status}` });
     }
     const data = await response.json();
     res.json(data);
@@ -335,6 +336,7 @@ app.use('/api/monitoring', monitoringRoutes);
 
 // AI Agent API
 app.use('/api/statistics/ai', hrAiRoutes);
+app.use('/api/statistics/customs', customsAiRoutes);
 app.use('/api/ai/instructions', customInstructionsRoutes);
 
 // ============================================================

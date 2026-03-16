@@ -13,6 +13,7 @@ import {
   X,
   Landmark,
   Activity,
+  Bot
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -110,6 +111,15 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'HR Intelligence AI', path: '/statistics/ai-chat' },
       ],
       hasSubmenu: true,
+    },
+    {
+      id: 'customs-ai',
+      label: 'AI Customs Desk',
+      icon: Bot,
+      path: '/statistics/customs-agent',
+      allowedRoles: ['admin', 'manager', 'Team Leader', 'Senior', 'user'],
+      subtitles: [],
+      hasSubmenu: false,
     },
     {
       id: 'fiscal',
