@@ -1,0 +1,21 @@
+[
+  {
+    "id": "acfcdd07-e045-4d32-b758-5d4be4b1c1f3",
+    "title": "Fadwa's Performance Analysis",
+    "isIncognito": false,
+    "createdAt": "2026-03-16T04:01:12.770Z",
+    "updatedAt": "2026-03-16T04:01:27.752Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Analyze Fadwa's performance footprint and top preferred clients.",
+        "timestamp": "2026-03-16T04:01:12.770Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here's a detailed analysis of Fadwa's performance footprint and her top preferred clients:\n\n### Performance Summary\n- **Total Files Handled:** 523\n- **Manual Files:** 508 (97.13%)\n- **Automatic Files:** 15 (2.87%)\n- **Total Modifications:** 18,456\n- **Average Files per Day:** 11.62\n- **Days Active:** 45\n- **Most Productive Day:** March 3, 2026\n\n### Peak Activity\n- **Most Active Hour:** 11:00 AM (3,250 actions)\n- **Other Peak Hours:**\n  - 17:00 (3,196 actions)\n  - 13:00 (2,802 actions)\n  - 16:00 (2,708 actions)\n  - 12:00 (2,677 actions)\n\n### Top Clients\n1. **DKM:** 11,199 files (47.5%)\n2. **LOGWIN:** 3,252 files (13.8%)\n3. **TCI:** 2,620 files (11.1%)\n4. **LEVACO:** 2,555 files (10.8%)\n5. **BLECKMANN:** 1,834 files (7.8%)\n\n### File Types\n- **IDMS_IMPORT:** 23,561 files\n\n### Inactivity\n- **Inactive Days:** 1 (February 17, 2026)\n\n### Recent Daily Metrics (Last 10 Days)\n- **March 3, 2026:** 21 files (21M/0A) | 310 modifications\n- **March 2, 2026:** 13 files (13M/0A) | 239 modifications\n- **February 27, 2026:** 15 files (15M/0A) | 376 modifications\n- **February 26, 2026:** 11 files (11M/0A) | 183 modifications\n- **February 25, 2026:** 5 files (5M/0A) | 558 modifications\n- **February 24, 2026:** 11 files (11M/0A) | 288 modifications\n- **February 23, 2026:** 14 files (14M/0A) | 400 modifications\n- **February 22, 2026:** 0 files\n- **February 21, 2026:** 0 files\n- **February 20, 2026:** 0 files\n\nFadwa has shown a strong preference for manual file handling, with a significant portion of her work directed towards the client DKM. Her peak productivity hours suggest she is most effective in the late morning. If you need further insights or specific metrics, feel free to ask!",
+        "timestamp": "2026-03-16T04:01:27.752Z"
+      }
+    ]
+  }
+]

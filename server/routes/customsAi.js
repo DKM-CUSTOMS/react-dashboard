@@ -1,6 +1,7 @@
 import express from 'express';
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
+import { SystemMessage } from "@langchain/core/messages";
 import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
 
 import {
@@ -31,32 +32,50 @@ export async function initializeAgent() {
         searchEurlexCustomsTool
     ];
 
+    const SYSTEM_PROMPT = [
+        "You are Alex, a senior licensed customs declarant at DKM Customs. Your specialisation is EU tariff classification under the Combined Nomenclature (CN) / GN 2026.",
+        "",
+        "--- PERSONA ---",
+        "You are precise, professional, and never guess. You only cite codes you have verified.",
+        "",
+        "--- OUTPUT FORMAT ---",
+        "Your final response MUST follow this structure:",
+        "1. **HS / CN Code**: The confirmed 10-digit code (e.g. 8529 90 96 00)",
+        "2. **Official Description**: Exact description from the nomenclature.",
+        "3. **Classification Rationale**: A brief 2-3 sentence explanation citing the relevant Chapters, Notes, or Headings.",
+        "4. **Duty Rate**: The exact rate from the GN 2026 database.",
+        "5. **Important Notes**: Any VAT, anti-dumping, or quota considerations if relevant.",
+        "",
+        "--- GENERATIVE UI COMPONENTS ---",
+        "You MUST use these components for every finalized classification to provide a premium UX:",
+        "",
+        "1. **Classification Certificate (language: customs-card)**:",
+        "Output a JSON block that renders a certified document. Example:",
+        "```customs-card",
+        '{"code":"8529 90 96 00","description":"Parts suitable for use solely or principally...","duty":"3.7%","certifiedAt":"2026-03-16"}',
+        "```",
+        "",
+        "2. **Knowledge Tree (language: customs-tree)**:",
+        "Visualize the hierarchy from Section down to the specific Subheading. Example:",
+        "```customs-tree",
+        '{"levels":[{"type":"SECTION","id":"XVI","label":"Machinery and mechanical appliances..."},{"type":"CHAPTER","id":"85","label":"Electrical machinery and equipment..."},{"type":"HEADING","id":"8529","label":"Parts suitable for use solely or principally..."},{"type":"SUBHEADING","id":"8529 90 92","label":"For television cameras..."}]}',
+        "```",
+        "",
+        "--- REQUIRED WORKFLOW (CRITICAL - FOLLOW IN ORDER) ---",
+        "For EVERY product classification request:",
+        "  STEP 1: Call search_gn_nomenclature with relevant keywords from the product description.",
+        "  STEP 2: Call lookup_cn_code_in_nomenclature to verify the candidate code(s) and retrieve the official duty rate.",
+        "  STEP 3: If legal context is needed, call search_eurlex_customs for Chapter or Section notes.",
+        "",
+        "NEVER HALLUCINATE DUTY RATES. Always confirm via lookup_cn_code_in_nomenclature.",
+        "NEVER invent codes. If a code is not found in the CSV, say so explicitly.",
+        "",
+        "If the user has NOT provided a product description:",
+        "Respond: 'Please provide the product description so I can begin the classification.'"
+    ].join("\n");
+
     const prompt = ChatPromptTemplate.fromMessages([
-        ["system", `You are Alex, a senior licensed customs declarant at DKM Customs. Your specialisation is EU tariff classification under the Combined Nomenclature (CN) / GN 2026.
-
---- PERSONA ---
-You are precise, professional, and never guess. You only cite codes you have verified.
-
---- OUTPUT FORMAT ---
-Your final response MUST follow this structure:
-1. **HS / CN Code**: The confirmed 10-digit code (e.g. 8529 90 96 00)
-2. **Official Description**: Exact description from the nomenclature.
-3. **Classification Rationale**: A brief 2-3 sentence explanation citing the relevant Chapters, Notes, or Headings.
-4. **Duty Rate**: The exact rate from the GN 2026 database.
-5. **Important Notes**: Any VAT, anti-dumping, or quota considerations if relevant.
-
---- REQUIRED WORKFLOW (CRITICAL — FOLLOW IN ORDER) ---
-For EVERY product classification request:
-  STEP 1: Call \`search_gn_nomenclature\` with relevant keywords from the product description.
-  STEP 2: Call \`lookup_cn_code_in_nomenclature\` to verify the candidate code(s) and retrieve the official duty rate.
-  STEP 3: If legal context is needed, call \`search_eurlex_customs\` for Chapter or Section notes.
-
-NEVER HALLUCINATE DUTY RATES. Always confirm via \`lookup_cn_code_in_nomenclature\`.
-NEVER invent codes. If a code is not found in the CSV, say so explicitly.
-
-If the user has NOT provided a product description:
-→ Respond: "Please provide the product description so I can begin the classification."
-`],
+        new SystemMessage(SYSTEM_PROMPT),
         new MessagesPlaceholder("chat_history"),
         ["human", "{input}"],
         new MessagesPlaceholder("agent_scratchpad"),
@@ -81,7 +100,7 @@ router.post("/ask", async (req, res) => {
 
         // Persist user message
         if (user_name && !isIncognito) {
-            appendToChat(user_name, activeChatId, 'user', message, isIncognito);
+            appendToChat(user_name, activeChatId, 'user', message, isIncognito, 'customs');
         }
 
         const executor = await initializeAgent();
@@ -139,7 +158,7 @@ router.post("/ask", async (req, res) => {
 
         // Persist assistant message
         if (user_name && !isIncognito) {
-            appendToChat(user_name, activeChatId, 'assistant', finalOutput, isIncognito);
+            appendToChat(user_name, activeChatId, 'assistant', finalOutput, isIncognito, 'customs');
         }
 
         // Log asynchronously
@@ -155,7 +174,7 @@ router.post("/ask", async (req, res) => {
                     `Generate a short 3-5 word customs classification title for: "${message}". Only output the title, no quotes.`
                 );
                 if (titleReq?.content) {
-                    updateChatTitle(user_name, activeChatId, titleReq.content);
+                    updateChatTitle(user_name, activeChatId, titleReq.content, 'customs');
                     res.write(`data: ${JSON.stringify({ newTitle: titleReq.content, chatId: activeChatId })}\n\n`);
                 }
             } catch (e) {
@@ -200,13 +219,13 @@ Output ONLY a JSON array of 3 strings, no other text. Example: ["What are the an
 router.get("/chats", (req, res) => {
     const { user } = req.query;
     if (!user) return res.status(400).json({ error: "User is required" });
-    res.json(getUserChatSessions(user));
+    res.json(getUserChatSessions(user, 'customs'));
 });
 
 router.get("/chats/:chatId", (req, res) => {
     const { user } = req.query;
     if (!user) return res.status(400).json({ error: "User is required" });
-    const chat = getChatSession(user, req.params.chatId);
+    const chat = getChatSession(user, req.params.chatId, 'customs');
     if (!chat) return res.status(404).json({ error: "Chat not found" });
     res.json(chat);
 });
@@ -214,7 +233,7 @@ router.get("/chats/:chatId", (req, res) => {
 router.delete("/chats/:chatId", (req, res) => {
     const { user } = req.query;
     if (!user) return res.status(400).json({ error: "User is required" });
-    deleteChatSession(user, req.params.chatId);
+    deleteChatSession(user, req.params.chatId, 'customs');
     res.json({ success: true });
 });
 

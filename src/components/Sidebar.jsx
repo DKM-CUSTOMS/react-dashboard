@@ -108,7 +108,7 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Compare', path: '/statistics/performance/compare' },
         { label: 'Monthly Report', path: '/statistics/monthly-report' },
         { label: 'User Management', path: '/statistics/user-management' },
-        { label: 'HR Intelligence AI', path: '/statistics/ai-chat', allowedRoles: ['developer'] },
+        { label: 'HR Intelligence AI', path: '/statistics/ai-chat' },
       ],
       hasSubmenu: true,
     },
