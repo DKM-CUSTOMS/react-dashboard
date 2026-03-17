@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(npm install:*)",
-      "Bash(xargs grep -l \"getUser\\\\|auth\\\\|login\")"
+      "Bash(xargs grep -l \"getUser\\\\|auth\\\\|login\")",
+      "Bash(node --input-type=module --eval \"import\\(''./src/pages/statistics/CustomsAiChatbotPage.jsx''\\).catch\\(e => console.error\\(e.message\\)\\)\")",
+      "Bash(npx --no-install vite build --mode development)"
     ]
   }
 }
