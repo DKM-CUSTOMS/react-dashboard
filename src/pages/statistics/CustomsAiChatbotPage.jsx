@@ -436,34 +436,34 @@ export default function CustomsAiChatbotPage() {
     const markdownComponents = useMemo(() => ({
         // ── Paragraphs ──────────────────────────────────────────────────────
         p: ({ node, ...props }) => (
-            <p className={`mb-4 last:mb-0 leading-[1.78] ${isIncognito ? 'text-[#c8c8c8]' : 'text-[#1a1a1a]'}`} {...props} />
+            <p className={`mb-4 last:mb-0 leading-[1.78] ${isIncognito ? 'text-[#1a1a1a]' : 'text-[#1a1a1a]'}`} {...props} />
         ),
 
         // ── Headings ─────────────────────────────────────────────────────────
         h1: ({ node, ...props }) => (
-            <h1 className={`text-[17px] font-semibold mt-7 mb-3 leading-snug tracking-[-0.01em] ${isIncognito ? 'text-[#e8e8e8]' : 'text-[#0d0d0d]'}`} {...props} />
+            <h1 className={`text-[17px] font-semibold mt-7 mb-3 leading-snug tracking-[-0.01em] ${isIncognito ? 'text-[#0d0d0d]' : 'text-[#0d0d0d]'}`} {...props} />
         ),
         h2: ({ node, ...props }) => (
-            <h2 className={`text-[15px] font-semibold mt-6 mb-2.5 leading-snug ${isIncognito ? 'text-[#e0e0e0]' : 'text-[#0d0d0d]'}`} {...props} />
+            <h2 className={`text-[15px] font-semibold mt-6 mb-2.5 leading-snug ${isIncognito ? 'text-[#0d0d0d]' : 'text-[#0d0d0d]'}`} {...props} />
         ),
         h3: ({ node, ...props }) => (
-            <h3 className={`text-[14px] font-semibold mt-5 mb-2 leading-snug ${isIncognito ? 'text-[#d8d8d8]' : 'text-[#0d0d0d]'}`} {...props} />
+            <h3 className={`text-[14px] font-semibold mt-5 mb-2 leading-snug ${isIncognito ? 'text-[#0d0d0d]' : 'text-[#0d0d0d]'}`} {...props} />
         ),
 
         // ── Inline formatting ─────────────────────────────────────────────────
         strong: ({ node, ...props }) => (
-            <strong className={`font-semibold ${isIncognito ? 'text-[#e0e0e0]' : 'text-[#0d0d0d]'}`} {...props} />
+            <strong className={`font-semibold ${isIncognito ? 'text-[#0d0d0d]' : 'text-[#0d0d0d]'}`} {...props} />
         ),
         em: ({ node, ...props }) => (
-            <em className={`italic ${isIncognito ? 'text-[#aaa]' : 'text-[#3d3d3d]'}`} {...props} />
+            <em className={`italic ${isIncognito ? 'text-[#3d3d3d]' : 'text-[#3d3d3d]'}`} {...props} />
         ),
 
         // ── Lists ─────────────────────────────────────────────────────────────
         ul: ({ node, ...props }) => (
-            <ul className={`list-disc pl-[1.4rem] my-3.5 space-y-1.5 ${isIncognito ? 'text-[#c8c8c8]' : 'text-[#1a1a1a]'}`} {...props} />
+            <ul className={`list-disc pl-[1.4rem] my-3.5 space-y-1.5 ${isIncognito ? 'text-[#1a1a1a]' : 'text-[#1a1a1a]'}`} {...props} />
         ),
         ol: ({ node, ...props }) => (
-            <ol className={`list-decimal pl-[1.4rem] my-3.5 space-y-1.5 ${isIncognito ? 'text-[#c8c8c8]' : 'text-[#1a1a1a]'}`} {...props} />
+            <ol className={`list-decimal pl-[1.4rem] my-3.5 space-y-1.5 ${isIncognito ? 'text-[#1a1a1a]' : 'text-[#1a1a1a]'}`} {...props} />
         ),
         li: ({ node, ...props }) => (
             <li className="leading-[1.75] [&>p]:mb-1 [&>p:last-child]:mb-0" {...props} />
@@ -471,34 +471,34 @@ export default function CustomsAiChatbotPage() {
 
         // ── Divider ───────────────────────────────────────────────────────────
         hr: ({ node, ...props }) => (
-            <hr className={`my-5 border-none border-t ${isIncognito ? 'border-[#2a2a2a]' : 'border-[#ebebeb]'}`} {...props} />
+            <hr className={`my-5 border-none border-t ${isIncognito ? 'border-[#d8d8d8]' : 'border-[#ebebeb]'}`} {...props} />
         ),
 
         // ── Links ─────────────────────────────────────────────────────────────
         a: ({ node, ...props }) => (
-            <a className={`underline underline-offset-[3px] transition-all ${isIncognito ? 'text-purple-400 decoration-purple-400/40 hover:decoration-purple-300' : 'text-primary decoration-primary/40 hover:decoration-primary'}`} target="_blank" rel="noopener noreferrer" {...props} />
+            <a className={`underline underline-offset-[3px] transition-all ${isIncognito ? 'text-[#555] decoration-[#888]/40 hover:decoration-[#333]' : 'text-primary decoration-primary/40 hover:decoration-primary'}`} target="_blank" rel="noopener noreferrer" {...props} />
         ),
 
         // ── Table ─────────────────────────────────────────────────────────────
         table: ({ node, ...props }) => (
-            <div className={`overflow-x-auto my-5 rounded-xl border shadow-[0_1px_4px_rgba(0,0,0,0.06)] ${isIncognito ? 'border-[#2d2d2d]' : 'border-[#e8e8e8]'}`}>
+            <div className={`overflow-x-auto my-5 rounded-xl border shadow-[0_1px_4px_rgba(0,0,0,0.06)] ${isIncognito ? 'border-[#c8c8c8]' : 'border-[#e8e8e8]'}`}>
                 <table className="min-w-full border-collapse text-[14px]" {...props} />
             </div>
         ),
         thead: ({ node, ...props }) => (
-            <thead className={`border-b ${isIncognito ? 'bg-[#1e1e1e] border-[#2d2d2d]' : 'bg-[#f7f7f7] border-[#e8e8e8]'}`} {...props} />
+            <thead className={`border-b ${isIncognito ? 'bg-[#d8d8d8] border-[#c8c8c8]' : 'bg-[#f7f7f7] border-[#e8e8e8]'}`} {...props} />
         ),
         th: ({ node, ...props }) => (
-            <th className={`px-4 py-2.5 text-left text-[11.5px] font-semibold uppercase tracking-[0.05em] whitespace-nowrap ${isIncognito ? 'text-[#666]' : 'text-[#5a5a5a]'}`} {...props} />
+            <th className={`px-4 py-2.5 text-left text-[11.5px] font-semibold uppercase tracking-[0.05em] whitespace-nowrap ${isIncognito ? 'text-[#888]' : 'text-[#5a5a5a]'}`} {...props} />
         ),
         tbody: ({ node, ...props }) => (
-            <tbody className={`divide-y ${isIncognito ? 'divide-[#222]' : 'divide-[#f0f0f0]'}`} {...props} />
+            <tbody className={`divide-y ${isIncognito ? 'divide-[#ddd]' : 'divide-[#f0f0f0]'}`} {...props} />
         ),
         tr: ({ node, ...props }) => (
-            <tr className={`transition-colors ${isIncognito ? 'hover:bg-[#1e1e1e]' : 'hover:bg-[#fafafa]'}`} {...props} />
+            <tr className={`transition-colors ${isIncognito ? 'hover:bg-[#e2e2e2]' : 'hover:bg-[#fafafa]'}`} {...props} />
         ),
         td: ({ node, ...props }) => (
-            <td className={`px-4 py-2.5 text-[13.5px] align-top ${isIncognito ? 'text-[#bbb]' : 'text-[#2a2a2a]'}`} {...props} />
+            <td className={`px-4 py-2.5 text-[13.5px] align-top ${isIncognito ? 'text-[#2a2a2a]' : 'text-[#2a2a2a]'}`} {...props} />
         ),
 
         // ── Code ─────────────────────────────────────────────────────────────
@@ -511,7 +511,7 @@ export default function CustomsAiChatbotPage() {
         ),
         code({ node, inline, className, children, ...props }) {
             return inline ? (
-                <code className={`px-[5px] py-[2px] rounded-[4px] text-[12.5px] font-mono font-medium ${isIncognito ? 'bg-[#252525] text-[#ff8080]' : 'bg-[#f0f0f0] text-[#cc3d43]'}`} {...props}>
+                <code className={`px-[5px] py-[2px] rounded-[4px] text-[12.5px] font-mono font-medium ${isIncognito ? 'bg-[#e8e8e8] text-[#ff8080]' : 'bg-[#f0f0f0] text-[#cc3d43]'}`} {...props}>
                     {children}
                 </code>
             ) : (
@@ -533,7 +533,7 @@ export default function CustomsAiChatbotPage() {
                 );
             }
             return (
-                <blockquote className={`border-l-[3px] pl-4 my-4 italic leading-[1.7] ${isIncognito ? 'border-[#333] text-[#777]' : 'border-[#d5d5d5] text-[#555]'}`} {...props}>
+                <blockquote className={`border-l-[3px] pl-4 my-4 italic leading-[1.7] ${isIncognito ? 'border-[#ccc] text-[#555]' : 'border-[#d5d5d5] text-[#555]'}`} {...props}>
                     {children}
                 </blockquote>
             );
@@ -549,9 +549,9 @@ export default function CustomsAiChatbotPage() {
 
     const renderInputBox = (placeholder = 'Describe a product or enter an HS/CN code...') => (
         <div className="w-full max-w-[48rem] mx-auto">
-            <div className={`border rounded-2xl overflow-hidden transition-colors ${isIncognito ? 'border-[#2d2d2d] bg-[#1c1c1c] focus-within:border-purple-600/50 focus-within:ring-2 focus-within:ring-purple-600/10' : 'border-[#d9d9d9] bg-white focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10'}`}>
+            <div className={`border rounded-2xl overflow-hidden transition-colors ${isIncognito ? 'border-[#c8c8c8] bg-[#e2e2e2] focus-within:border-[#999] focus-within:ring-2 focus-within:ring-[#666]/10' : 'border-[#d9d9d9] bg-white focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10'}`}>
                 {attachments.length > 0 && (
-                    <div className={`flex flex-wrap gap-2 p-3 border-b ${isIncognito ? 'border-[#2a2a2a] bg-[#161616]' : 'border-gray-100 bg-gray-50/30'}`}>
+                    <div className={`flex flex-wrap gap-2 p-3 border-b ${isIncognito ? 'border-[#cacaca] bg-[#dcdcdc]' : 'border-gray-100 bg-gray-50/30'}`}>
                         {attachments.map((file, idx) => (
                             <div key={idx} className="relative group bg-white border border-gray-200 rounded-lg p-2 flex items-center gap-2 shadow-sm pr-8">
                                 {file.type.startsWith('image/') ? (
@@ -583,7 +583,7 @@ export default function CustomsAiChatbotPage() {
                     }}
                     onPaste={handlePaste}
                     placeholder={placeholder}
-                    className={`w-full bg-transparent min-h-[44px] max-h-[200px] text-[15px] resize-none px-4 pt-3 pb-1 focus:outline-none ${isIncognito ? 'placeholder:text-[#3d3d3d] text-[#e8e8e8]' : 'placeholder:text-[#999] text-[#2d2d2d]'}`}
+                    className={`w-full bg-transparent min-h-[44px] max-h-[200px] text-[15px] resize-none px-4 pt-3 pb-1 focus:outline-none ${isIncognito ? 'placeholder:text-[#aaa] text-[#1a1a1a]' : 'placeholder:text-[#999] text-[#2d2d2d]'}`}
                     disabled={isLoading}
                     rows={1}
                 />
@@ -600,7 +600,7 @@ export default function CustomsAiChatbotPage() {
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isLoading || isUploading}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isIncognito ? 'text-[#555] hover:bg-[#2a2a2a] hover:text-[#aaa]' : 'text-[#7a7a7a] hover:bg-[#f2f2f2]'}`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isIncognito ? 'text-[#666] hover:bg-[#d4d4d4] hover:text-[#333]' : 'text-[#7a7a7a] hover:bg-[#f2f2f2]'}`}
                             title="Attach product photo or invoice/packing list"
                         >
                             {isUploading ? <Loader2 size={18} className="animate-spin text-primary" /> : <Paperclip size={18} />}
@@ -608,18 +608,18 @@ export default function CustomsAiChatbotPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         {isIncognito && (
-                            <span className="flex items-center gap-1 text-[12px] text-purple-400 font-medium px-2 bg-purple-900/30 rounded-full h-6">
+                            <span className="flex items-center gap-1 text-[12px] text-[#666] font-medium px-2 bg-[#d0d0d0] rounded-full h-6">
                                 <EyeOff size={12} /> Private
                             </span>
                         )}
-                        <button className={`flex items-center gap-1 text-[13px] transition-colors px-1 ${isIncognito ? 'text-purple-400/70 hover:text-purple-300' : 'text-primary/70 hover:text-primary'}`}>
+                        <button className={`flex items-center gap-1 text-[13px] transition-colors px-1 ${isIncognito ? 'text-[#888] hover:text-[#444]' : 'text-primary/70 hover:text-primary'}`}>
                             <Sparkles size={13} />
                             Customs Agent
                         </button>
                         {isLoading ? (
                             <button
                                 onClick={handleStop}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#1a1a1a] text-white hover:bg-[#333] transition-all"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#1a1a1a] text-white hover:bg-[#5e5e5e] transition-all"
                                 title="Stop generating"
                             >
                                 <Square size={14} fill="currentColor" />
@@ -629,8 +629,8 @@ export default function CustomsAiChatbotPage() {
                                 onClick={() => handleSend()}
                                 disabled={!input.trim() && attachments.length === 0}
                                 className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${(!input.trim() && attachments.length === 0)
-                                    ? isIncognito ? 'text-[#3a3a3a] cursor-not-allowed' : 'text-[#c5c5c5] cursor-not-allowed'
-                                    : isIncognito ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-primary text-white hover:bg-primary-dark'
+                                    ? isIncognito ? 'text-[#aaa] cursor-not-allowed' : 'text-[#c5c5c5] cursor-not-allowed'
+                                    : isIncognito ? 'bg-[#555] text-white hover:bg-[#444]' : 'bg-primary text-white hover:bg-primary-dark'
                                     }`}
                             >
                                 <ArrowUp size={18} strokeWidth={2} />
@@ -738,31 +738,31 @@ export default function CustomsAiChatbotPage() {
             </AnimatePresence>
 
             {/* Main Chat Area */}
-            <div className={`flex-1 flex flex-col h-full relative transition-colors duration-200 ${isIncognito ? 'bg-[#131313]' : 'bg-white'}`}>
+            <div className={`flex-1 flex flex-col h-full relative transition-colors duration-200 ${isIncognito ? 'bg-[#f0f0f0]' : 'bg-white'}`}>
 
                 {/* Topbar */}
-                <div className={`shrink-0 flex items-center justify-between px-6 h-12 border-b transition-colors duration-200 ${isIncognito ? 'bg-[#1a1a1a] border-[#2a2a2a]' : 'bg-white border-[#f0f0f0]'}`}>
+                <div className={`shrink-0 flex items-center justify-between px-6 h-12 border-b transition-colors duration-200 ${isIncognito ? 'bg-[#e8e8e8] border-[#d0d0d0]' : 'bg-white border-[#f0f0f0]'}`}>
                     <div className="flex items-center gap-2">
                         {isSidebarOpen && window.innerWidth >= 768 && (
-                            <button onClick={() => setIsSidebarOpen(false)} className={`mr-2 p-1.5 rounded-md transition-colors ${isIncognito ? 'text-[#666] hover:bg-[#2a2a2a] hover:text-[#aaa]' : 'text-[#999] hover:bg-[#f2f2f2]'}`} title="Close sidebar">
+                            <button onClick={() => setIsSidebarOpen(false)} className={`mr-2 p-1.5 rounded-md transition-colors ${isIncognito ? 'text-[#888] hover:bg-[#d4d4d4] hover:text-[#666]' : 'text-[#999] hover:bg-[#f2f2f2]'}`} title="Close sidebar">
                                 <Menu size={16} />
                             </button>
                         )}
                         {!isSidebarOpen && window.innerWidth >= 768 && (
-                            <button onClick={() => setIsSidebarOpen(true)} className={`mr-2 p-1.5 rounded-md transition-colors ${isIncognito ? 'text-[#666] hover:bg-[#2a2a2a] hover:text-[#aaa]' : 'text-[#999] hover:bg-[#f2f2f2]'}`} title="Open sidebar">
+                            <button onClick={() => setIsSidebarOpen(true)} className={`mr-2 p-1.5 rounded-md transition-colors ${isIncognito ? 'text-[#888] hover:bg-[#d4d4d4] hover:text-[#666]' : 'text-[#999] hover:bg-[#f2f2f2]'}`} title="Open sidebar">
                                 <Menu size={16} />
                             </button>
                         )}
-                        <button className={`flex items-center gap-1.5 text-[14px] font-medium transition-colors ${isIncognito ? 'text-[#d0d0d0] hover:text-purple-300' : 'text-[#2d2d2d] hover:text-primary'}`}>
-                            <Sparkles size={14} className={isIncognito ? 'text-purple-400' : 'text-primary'} />
+                        <button className={`flex items-center gap-1.5 text-[14px] font-medium transition-colors ${isIncognito ? 'text-[#2d2d2d] hover:text-[#111]' : 'text-[#2d2d2d] hover:text-primary'}`}>
+                            <Sparkles size={14} className={isIncognito ? 'text-[#666]' : 'text-primary'} />
                             EU Customs Desk
-                            <ChevronDown size={14} className={isIncognito ? 'text-[#555]' : 'text-[#999]'} />
+                            <ChevronDown size={14} className={isIncognito ? 'text-[#999]' : 'text-[#999]'} />
                         </button>
                     </div>
                     <div className="flex items-center gap-1">
                         <button
                             onClick={handleNewChat}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${isIncognito ? 'hover:bg-[#2a2a2a] text-[#666] hover:text-[#aaa]' : 'hover:bg-[#f2f2f2] text-[#999] hover:text-[#333]'}`}
+                            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${isIncognito ? 'hover:bg-[#d4d4d4] text-[#888] hover:text-[#444]' : 'hover:bg-[#f2f2f2] text-[#999] hover:text-[#333]'}`}
                             title="New classification"
                         >
                             <Plus size={16} />
@@ -770,7 +770,7 @@ export default function CustomsAiChatbotPage() {
                         <button
                             onClick={() => setIsIncognito(!isIncognito)}
                             disabled={hasMessages}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${hasMessages ? 'opacity-40 cursor-not-allowed' : isIncognito ? 'bg-purple-900/40 text-purple-400' : 'hover:bg-[#f2f2f2] text-[#999] hover:text-[#333]'}`}
+                            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${hasMessages ? 'opacity-40 cursor-not-allowed' : isIncognito ? 'bg-[#dcdcdc] text-[#555] hover:bg-[#d0d0d0]' : 'hover:bg-[#f2f2f2] text-[#999] hover:text-[#333]'}`}
                             title={hasMessages ? 'Cannot change after conversation starts' : 'Toggle Private mode'}
                         >
                             <EyeOff size={16} />
@@ -787,26 +787,26 @@ export default function CustomsAiChatbotPage() {
                     <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-8">
                         <div className="w-full max-w-[48rem] flex flex-col items-center mb-6 text-center">
                             {isIncognito && (
-                                <div className="flex items-center gap-2 text-[13px] text-purple-400 bg-purple-900/20 border border-purple-800/30 rounded-full px-4 py-1.5 mb-5">
+                                <div className="flex items-center gap-2 text-[13px] text-[#888] bg-[#dcdcdc] border border-[#ccc] rounded-full px-4 py-1.5 mb-5">
                                     <EyeOff size={13} /> Private mode — this conversation won't be saved
                                 </div>
                             )}
-                            <h1 className={`text-[28px] font-semibold mb-2 leading-tight ${isIncognito ? 'text-[#e0e0e0]' : 'text-[#1a1a1a]'}`}>
+                            <h1 className={`text-[28px] font-semibold mb-2 leading-tight ${isIncognito ? 'text-[#0d0d0d]' : 'text-[#1a1a1a]'}`}>
                                 Hello, {userName}.
                             </h1>
-                            <p className={`text-[15px] ${isIncognito ? 'text-[#555]' : 'text-[#999]'}`}>I am Alex, your licensed EU Customs declarant. Powered by GN 2026.</p>
+                            <p className={`text-[15px] ${isIncognito ? 'text-[#999]' : 'text-[#999]'}`}>I am Alex, your licensed EU Customs declarant. Powered by GN 2026.</p>
                         </div>
 
                         {renderInputBox()}
 
                         <div className="w-full max-w-[48rem] mt-6">
-                            <p className={`text-[11px] font-semibold uppercase tracking-wider mb-2 ml-1 ${isIncognito ? 'text-[#444]' : 'text-[#999]'}`}>Suggested for you</p>
+                            <p className={`text-[11px] font-semibold uppercase tracking-wider mb-2 ml-1 ${isIncognito ? 'text-[#888]' : 'text-[#999]'}`}>Suggested for you</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                 {displayPrompts.map((item, idx) => (
                                     <button
                                         key={idx}
                                         onClick={() => handlePromptClick(item.prompt)}
-                                        className={`text-left py-3 px-4 rounded-xl border text-[13px] font-medium transition-all truncate ${isIncognito ? 'border-[#2a2a2a] hover:border-purple-700/50 hover:bg-purple-900/10 text-[#555] hover:text-[#aaa]' : 'border-[#e5e5e5] hover:border-primary/30 hover:bg-primary/5 text-[#555] hover:text-[#222]'}`}
+                                        className={`text-left py-3 px-4 rounded-xl border text-[13px] font-medium transition-all truncate ${isIncognito ? 'border-[#c8c8c8] hover:border-[#aaa] hover:bg-[#d8d8d8] text-[#555] hover:text-[#222]' : 'border-[#e5e5e5] hover:border-primary/30 hover:bg-primary/5 text-[#555] hover:text-[#222]'}`}
                                     >
                                         {item.label}
                                     </button>
@@ -834,11 +834,11 @@ export default function CustomsAiChatbotPage() {
                                         >
                                             {m.role === 'user' ? (
                                                 <div className="flex flex-col items-end gap-1 group">
-                                                    <div className={`max-w-[80%] px-4 py-3 rounded-3xl text-[15px] leading-[1.6] ${isIncognito ? 'bg-[#2a2a2a] text-[#e8e8e8]' : 'bg-[#f4f4f4] text-[#2d2d2d]'}`}>
+                                                    <div className={`max-w-[80%] px-4 py-3 rounded-3xl text-[15px] leading-[1.6] ${isIncognito ? 'bg-[#e0e0e0] text-[#1a1a1a]' : 'bg-[#f4f4f4] text-[#2d2d2d]'}`}>
                                                         {m.attachments?.length > 0 && (
                                                             <div className="flex flex-wrap gap-2 mb-2">
                                                                 {m.attachments.map((file, idx) => (
-                                                                    <div key={idx} className={`backdrop-blur-sm border rounded-xl p-2 flex items-center gap-2 max-w-full overflow-hidden ${isIncognito ? 'bg-[#333]/80 border-[#444]' : 'bg-white/80 border-gray-200'}`}>
+                                                                    <div key={idx} className={`backdrop-blur-sm border rounded-xl p-2 flex items-center gap-2 max-w-full overflow-hidden ${isIncognito ? 'bg-[#d8d8d8]/80 border-[#cacaca]' : 'bg-white/80 border-gray-200'}`}>
                                                                         {file.type?.startsWith('image/') ? (
                                                                             <div
                                                                                 className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden shrink-0 cursor-zoom-in"
@@ -897,7 +897,7 @@ export default function CustomsAiChatbotPage() {
                                                     {editingIndex !== i && !isLoading && (
                                                         <button
                                                             onClick={() => handleEditStart(i, m.text)}
-                                                            className={`opacity-0 group-hover:opacity-100 p-1.5 rounded-md transition-all ${isIncognito ? 'hover:bg-[#2a2a2a] text-[#555] hover:text-[#aaa]' : 'hover:bg-[#f2f2f2] text-[#aaa] hover:text-[#555]'}`}
+                                                            className={`opacity-0 group-hover:opacity-100 p-1.5 rounded-md transition-all ${isIncognito ? 'hover:bg-[#d4d4d4] text-[#666] hover:text-[#333]' : 'hover:bg-[#f2f2f2] text-[#aaa] hover:text-[#555]'}`}
                                                             title="Edit message"
                                                         >
                                                             <Pencil size={13} />
@@ -910,7 +910,7 @@ export default function CustomsAiChatbotPage() {
                                                         <div className={`text-[15px] leading-[1.7] p-3 rounded-xl ${isIncognito ? 'text-red-400 bg-red-900/20' : 'text-red-600 bg-red-50'}`}>{m.text}</div>
                                                     ) : (
                                                         <div>
-                                                            <div className={`text-[15px] leading-[1.78] [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 ${isIncognito ? 'text-[#c8c8c8]' : 'text-[#1a1a1a]'}`}>
+                                                            <div className={`text-[15px] leading-[1.78] [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 ${isIncognito ? 'text-[#1a1a1a]' : 'text-[#1a1a1a]'}`}>
                                                                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                                                                     {m.text}
                                                                 </ReactMarkdown>
@@ -918,21 +918,21 @@ export default function CustomsAiChatbotPage() {
                                                             <div className="mt-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                                                 <button
                                                                     onClick={() => handleCopy(m.text, i)}
-                                                                    className={`p-1.5 rounded-md transition-colors ${isIncognito ? 'hover:bg-[#2a2a2a] text-[#555]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
+                                                                    className={`p-1.5 rounded-md transition-colors ${isIncognito ? 'hover:bg-[#d4d4d4] text-[#666]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
                                                                     title="Copy"
                                                                 >
                                                                     {copiedIndex === i ? <Check size={15} className="text-green-500" /> : <Copy size={15} />}
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleFeedback(i, 'up')}
-                                                                    className={`p-1.5 rounded-md transition-colors ${messageFeedback[i] === 'up' ? 'text-green-500' : isIncognito ? 'hover:bg-[#2a2a2a] text-[#555]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
+                                                                    className={`p-1.5 rounded-md transition-colors ${messageFeedback[i] === 'up' ? 'text-green-500' : isIncognito ? 'hover:bg-[#d4d4d4] text-[#666]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
                                                                     title="Good response"
                                                                 >
                                                                     <ThumbsUp size={15} />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleFeedback(i, 'down')}
-                                                                    className={`p-1.5 rounded-md transition-colors ${messageFeedback[i] === 'down' ? 'text-red-500' : isIncognito ? 'hover:bg-[#2a2a2a] text-[#555]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
+                                                                    className={`p-1.5 rounded-md transition-colors ${messageFeedback[i] === 'down' ? 'text-red-500' : isIncognito ? 'hover:bg-[#d4d4d4] text-[#666]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
                                                                     title="Bad response"
                                                                 >
                                                                     <ThumbsDown size={15} />
@@ -940,7 +940,7 @@ export default function CustomsAiChatbotPage() {
                                                                 {i === messages.length - 1 && !isLoading && (
                                                                     <button
                                                                         onClick={handleRegenerate}
-                                                                        className={`p-1.5 rounded-md transition-colors ${isIncognito ? 'hover:bg-[#2a2a2a] text-[#555]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
+                                                                        className={`p-1.5 rounded-md transition-colors ${isIncognito ? 'hover:bg-[#d4d4d4] text-[#666]' : 'hover:bg-[#f2f2f2] text-[#888]'}`}
                                                                         title="Regenerate response"
                                                                     >
                                                                         <RotateCcw size={15} />
@@ -959,11 +959,11 @@ export default function CustomsAiChatbotPage() {
                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4">
                                         <div className="flex items-center gap-2 py-1">
                                             <div className="flex gap-1">
-                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#4a4a4a]' : 'bg-[#aaa]'}`} style={{ animationDelay: '0ms' }} />
-                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#4a4a4a]' : 'bg-[#aaa]'}`} style={{ animationDelay: '150ms' }} />
-                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#4a4a4a]' : 'bg-[#aaa]'}`} style={{ animationDelay: '300ms' }} />
+                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#555]' : 'bg-[#aaa]'}`} style={{ animationDelay: '0ms' }} />
+                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#555]' : 'bg-[#aaa]'}`} style={{ animationDelay: '150ms' }} />
+                                                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isIncognito ? 'bg-[#555]' : 'bg-[#aaa]'}`} style={{ animationDelay: '300ms' }} />
                                             </div>
-                                            <span className={`text-[13px] ${isIncognito ? 'text-[#4a4a4a]' : 'text-[#999]'}`}>{loadingText}</span>
+                                            <span className={`text-[13px] ${isIncognito ? 'text-[#888]' : 'text-[#999]'}`}>{loadingText}</span>
                                         </div>
                                     </motion.div>
                                 )}
@@ -974,7 +974,7 @@ export default function CustomsAiChatbotPage() {
                                             <button
                                                 key={idx}
                                                 onClick={() => handlePromptClick(pill)}
-                                                className={`px-4 py-2 text-[13px] font-medium rounded-full hover:shadow-sm transition-all ${isIncognito ? 'bg-[#1e1e1e] border border-[#2d2d2d] text-[#666] hover:border-[#444] hover:text-[#bbb]' : 'bg-gradient-to-br from-[#f8f9fc] to-white border border-[#e2e8f0] text-[#475569] hover:border-[#cbd5e1] hover:text-[#0f172a]'}`}
+                                                className={`px-4 py-2 text-[13px] font-medium rounded-full hover:shadow-sm transition-all ${isIncognito ? 'bg-[#e8e8e8] border border-[#c8c8c8] text-[#555] hover:border-[#cacaca] hover:text-[#222]' : 'bg-gradient-to-br from-[#f8f9fc] to-white border border-[#e2e8f0] text-[#475569] hover:border-[#cbd5e1] hover:text-[#0f172a]'}`}
                                             >
                                                 {pill}
                                             </button>
@@ -994,7 +994,7 @@ export default function CustomsAiChatbotPage() {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: 8 }}
                                     onClick={scrollToBottom}
-                                    className={`absolute bottom-24 right-6 z-10 w-9 h-9 rounded-full shadow-md flex items-center justify-center transition-colors ${isIncognito ? 'bg-[#2a2a2a] border border-[#3a3a3a] text-[#777] hover:bg-[#333]' : 'bg-white border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]'}`}
+                                    className={`absolute bottom-24 right-6 z-10 w-9 h-9 rounded-full shadow-md flex items-center justify-center transition-colors ${isIncognito ? 'bg-[#e2e2e2] border border-[#d4d4d4] text-[#555] hover:bg-[#d4d4d4]' : 'bg-white border border-[#e0e0e0] text-[#666] hover:bg-[#f5f5f5]'}`}
                                     title="Scroll to bottom"
                                 >
                                     <ChevronDown size={18} />
@@ -1003,9 +1003,9 @@ export default function CustomsAiChatbotPage() {
                         </AnimatePresence>
 
                         {/* Bottom pinned input */}
-                        <div className={`shrink-0 px-5 pt-2 pb-3 transition-colors duration-200 ${isIncognito ? 'bg-[#131313]' : 'bg-white'}`}>
+                        <div className={`shrink-0 px-5 pt-2 pb-3 transition-colors duration-200 ${isIncognito ? 'bg-[#f0f0f0]' : 'bg-white'}`}>
                             {renderInputBox()}
-                            <p className={`text-center mt-2 text-[12px] ${isIncognito ? 'text-[#333]' : 'text-[#b0b0b0]'}`}>
+                            <p className={`text-center mt-2 text-[12px] ${isIncognito ? 'text-[#999]' : 'text-[#b0b0b0]'}`}>
                                 Always verify duty rates with official EU TARIC databases.
                             </p>
                         </div>
