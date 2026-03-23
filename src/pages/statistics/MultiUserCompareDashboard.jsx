@@ -6,7 +6,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
     TrendingUp, FileText, Clock, BarChart3, Zap, Activity, X,
     ArrowLeft, RefreshCw, Users, Target, Award, AlertTriangle,
-    CheckCircle, Brain, Lightbulb, Scale, FileEdit, Trophy
+    CheckCircle, Brain, Lightbulb, Scale, FileEdit, Trophy, Trash2
 } from "lucide-react";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler);
@@ -78,22 +78,35 @@ const transformApiData = (apiData, username) => {
     if (!apiData?.user || !apiData?.daily_metrics || !apiData?.summary) return null;
     const { summary, daily_metrics } = apiData;
 
+    const principalEntries = Object.entries(summary.principal_specialization || {})
+        .sort(([, a], [, b]) => b - a);
+
     return {
         user: {
             id: username,
             name: username.replace(/\./g, " ").replace(/\b\w/g, l => l.toUpperCase()),
             totalFiles: summary.total_files_handled || 0,
+            totalModifications: summary.total_modifications || 0,
+            totalDeletions: summary.total_deletions || 0,
+            deletedOwnFiles: summary.deleted_own_files || 0,
+            deletedOthersFiles: summary.deleted_others_files || 0,
             avgFilesPerDay: (summary.avg_files_per_day || 0).toFixed(1),
+            avgTime: (summary.avg_creation_time_minutes || summary.avg_creation_time || 0).toFixed(2),
             modificationsPerFile: (summary.modifications_per_file || 0).toFixed(1),
             autoPercentage: Math.round(summary.manual_vs_auto_ratio?.automatic_percent || 0),
             manualPercentage: Math.round(summary.manual_vs_auto_ratio?.manual_percent || 0),
             daysActive: summary.days_active || 0,
             mostActiveCompany: Object.entries(summary.company_specialization || {})
-                .sort(([, a], [, b]) => b - a)[0]?.[0] || "N/A"
+                .sort(([, a], [, b]) => b - a)[0]?.[0] || "N/A",
+            mostActivePrincipal: principalEntries[0]?.[0] || "N/A"
         },
         dailyMetrics: daily_metrics.map(d => ({
             date: d.date,
-            files: (d.manual_files_created || 0) + (d.automatic_files_created || 0)
+            files: (d.manual_files_created || 0) + (d.automatic_files_created || 0),
+            modifications: d.modification_count || 0,
+            deleted: (d.deleted_file_ids || []).length,
+            deletedOwn: (d.deleted_own_file_ids || []).length,
+            deletedOthers: (d.deleted_others_file_ids || []).length,
         }))
     };
 };
@@ -164,7 +177,7 @@ const UserSummaryCard = ({ data, color, efficiencyScore, consistencyScore }) => 
                 <div>
                     <h3 className="font-bold text-gray-900 text-lg">{user.name}</h3>
                     <p className="text-xs text-gray-500">
-                        {user.teamName} • {user.mostActiveCompany} specialist
+                        {user.teamName} • {user.mostActivePrincipal || user.mostActiveCompany} specialist
                     </p>
                 </div>
             </div>
@@ -174,7 +187,7 @@ const UserSummaryCard = ({ data, color, efficiencyScore, consistencyScore }) => 
                 <ScoreGauge score={consistencyScore.score} label="Consistency" color={color} size="sm" />
             </div>
 
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center">
                 <div className={`${c.light} p-2 rounded-sm`}>
                     <p className={`text-lg font-bold ${c.text}`}>{user.totalFiles}</p>
                     <p className="text-[9px] text-gray-500 uppercase">Files</p>
@@ -186,6 +199,10 @@ const UserSummaryCard = ({ data, color, efficiencyScore, consistencyScore }) => 
                 <div className={`${c.light} p-2 rounded-sm`}>
                     <p className={`text-lg font-bold ${c.text}`}>{user.autoPercentage}%</p>
                     <p className="text-[9px] text-gray-500 uppercase">Auto</p>
+                </div>
+                <div className="bg-red-50 p-2 rounded-sm">
+                    <p className="text-lg font-bold text-red-600">{user.totalDeletions || 0}</p>
+                    <p className="text-[9px] text-gray-500 uppercase">Deleted</p>
                 </div>
             </div>
         </div>
@@ -268,6 +285,18 @@ const MultiUserCompareDashboard = () => {
                     label: 'Edits/File',
                     data: usersData.map(d => parseFloat(d.user.modificationsPerFile)),
                     backgroundColor: colors.slice(0, usersData.length)
+                }]
+            },
+            deletions: {
+                labels: usersData.map(d => d.user.name),
+                datasets: [{
+                    label: 'Total Deletions',
+                    data: usersData.map(d => d.user.totalDeletions || 0),
+                    backgroundColor: colors.slice(0, usersData.length).map(c => c + '80')
+                }, {
+                    label: 'Others\' Files',
+                    data: usersData.map(d => d.user.deletedOthersFiles || 0),
+                    backgroundColor: '#ef444480'
                 }]
             }
         };
@@ -377,6 +406,14 @@ const MultiUserCompareDashboard = () => {
                                             <span className="text-gray-500">Output:</span>{' '}
                                             <span className="font-bold text-gray-900">{data.user.totalFiles}</span>
                                         </div>
+                                        <div>
+                                            <span className="text-gray-500">Deletions:</span>{' '}
+                                            <span className="font-bold text-red-600">{data.user.totalDeletions || 0}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Avg Time:</span>{' '}
+                                            <span className="font-bold text-gray-900">{data.user.avgTime}m</span>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -420,6 +457,21 @@ const MultiUserCompareDashboard = () => {
                                 <Bar data={chartData.complexity} options={chartOptions} />
                             </div>
                         </div>
+
+                        {/* Deletions Comparison */}
+                        {usersData.some(d => (d.user.totalDeletions || 0) > 0) && (
+                            <div className="bg-white rounded-sm border border-gray-100 shadow-sm">
+                                <div className="px-4 py-3 border-b border-gray-100">
+                                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                        <Trash2 className="w-4 h-4 text-red-400" />
+                                        Deletions Comparison
+                                    </h3>
+                                </div>
+                                <div className="p-4 h-64">
+                                    <Bar data={chartData.deletions} options={chartOptions} />
+                                </div>
+                            </div>
+                        )}
 
                         {/* Work Style Distribution */}
                         <div className="bg-white rounded-sm border border-gray-100 shadow-sm">
@@ -505,6 +557,28 @@ const MultiUserCompareDashboard = () => {
                                         </div>
                                     </div>
                                 );
+                            })()}
+
+                            {/* Deletion Pattern */}
+                            {(() => {
+                                const highDeleters = usersData.filter(d => (d.user.deletedOthersFiles || 0) > 5);
+                                if (highDeleters.length > 0) {
+                                    return (
+                                        <div className="p-4 bg-red-50 border border-red-100 rounded-sm">
+                                            <div className="flex items-start gap-3">
+                                                <Trash2 className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <h4 className="font-bold text-red-900 text-sm">Cross-Deletion Pattern</h4>
+                                                    <p className="text-xs text-red-700 mt-1">
+                                                        {highDeleters.map(d => `${d.user.name} (${d.user.deletedOthersFiles} others' files)`).join(', ')}
+                                                        {' '}— deleting files created by other declarants may indicate quality control activity or coordination issues.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return null;
                             })()}
 
                             {/* Automation Opportunity */}

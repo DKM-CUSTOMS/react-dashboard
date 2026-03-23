@@ -3,7 +3,7 @@ import { ArrowUp, Plus, Sparkles, ChevronDown, Settings, MessageSquare, Trash2, 
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, LineChart, Line as RechartsLine, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import CustomInstructionsModal from '../../components/statistics/CustomInstructionsModal';
 
@@ -413,10 +413,42 @@ export default function AiChatbotPage() {
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
 
-            // 1. GENERATIVE UI - CHART
-            if (!inline && language === 'chart') {
+            // Helper: coerce all numeric-looking values in data arrays to actual numbers
+            const coerceChartData = (data) => {
+                if (!Array.isArray(data)) return [];
+                return data.map(row => {
+                    const coerced = {};
+                    for (const [k, v] of Object.entries(row)) {
+                        coerced[k] = (typeof v === 'string' && v !== '' && !isNaN(Number(v))) ? Number(v) : v;
+                    }
+                    return coerced;
+                });
+            };
+
+            // Helper: auto-detect bar keys from data when bars array is missing
+            const inferBars = (data, xAxisKey) => {
+                if (!data || !data.length) return [];
+                const defaultColors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4'];
+                const xKey = xAxisKey || 'name';
+                const numericKeys = Object.keys(data[0]).filter(k => k !== xKey && typeof data[0][k] === 'number');
+                return numericKeys.map((key, i) => ({ key, name: key, color: defaultColors[i % defaultColors.length] }));
+            };
+
+            // Helper: auto-detect line keys from data when lines array is missing
+            const inferLines = (data, xAxisKey) => {
+                if (!data || !data.length) return [];
+                const defaultColors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4'];
+                const xKey = xAxisKey || 'name';
+                const numericKeys = Object.keys(data[0]).filter(k => k !== xKey && typeof data[0][k] === 'number');
+                return numericKeys.map((key, i) => ({ key, name: key, color: defaultColors[i % defaultColors.length] }));
+            };
+
+            // 1. GENERATIVE UI - CHART (Bar) — also handles barchart, bar aliases
+            if (!inline && (language === 'chart' || language === 'barchart' || language === 'bar')) {
                 try {
                     const chartData = JSON.parse(String(children).replace(/\n$/, ''));
+                    chartData.data = coerceChartData(chartData.data);
+                    const bars = (chartData.bars && chartData.bars.length > 0) ? chartData.bars : inferBars(chartData.data, chartData.xAxisKey);
                     return (
                         <div className="my-6 border border-[#e5e5e5] rounded-xl overflow-hidden bg-white shadow-sm">
                             <div className="px-5 py-3.5 border-b border-[#e5e5e5] bg-gray-50/50">
@@ -429,7 +461,7 @@ export default function AiChatbotPage() {
                                         <XAxis dataKey={chartData.xAxisKey || "name"} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#888' }} />
                                         <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#888' }} />
                                         <Tooltip cursor={{ fill: '#f5f5f5' }} contentStyle={{ borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                        {chartData.bars?.map((bar, i) => (
+                                        {bars.map((bar, i) => (
                                             <Bar key={i} dataKey={bar.key} fill={bar.color || '#3b82f6'} radius={[4, 4, 0, 0]} name={bar.name || bar.key} />
                                         ))}
                                     </BarChart>
@@ -442,7 +474,91 @@ export default function AiChatbotPage() {
                 }
             }
 
-            // 2. GENERATIVE UI - DASHBOARD CARDS
+            // 2. GENERATIVE UI - LINE CHART — also handles line alias
+            if (!inline && (language === 'linechart' || language === 'line')) {
+                try {
+                    const chartData = JSON.parse(String(children).replace(/\n$/, ''));
+                    chartData.data = coerceChartData(chartData.data);
+                    const lines = (chartData.lines && chartData.lines.length > 0) ? chartData.lines : inferLines(chartData.data, chartData.xAxisKey);
+                    return (
+                        <div className="my-6 border border-[#e5e5e5] rounded-xl overflow-hidden bg-white shadow-sm">
+                            <div className="px-5 py-3.5 border-b border-[#e5e5e5] bg-gray-50/50">
+                                <h4 className="font-semibold text-gray-800 text-[15px]">{chartData.title || "Trend Chart"}</h4>
+                            </div>
+                            <div className="p-5" style={{ height: 320, width: '100%' }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                        <XAxis dataKey={chartData.xAxisKey || "name"} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                                        <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                                        <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                        <Legend />
+                                        {lines.map((line, i) => (
+                                            <RechartsLine key={i} type="monotone" dataKey={line.key} stroke={line.color || ['#3b82f6', '#10b981', '#f97316', '#8b5cf6'][i % 4]} strokeWidth={2} dot={{ r: 3 }} name={line.name || line.key} />
+                                        ))}
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    );
+                } catch (e) {
+                    console.error("Failed to parse line chart data", e);
+                }
+            }
+
+            // 3. GENERATIVE UI - PIE CHART — also handles pie, donut aliases
+            if (!inline && (language === 'piechart' || language === 'pie' || language === 'donut')) {
+                try {
+                    const chartData = JSON.parse(String(children).replace(/\n$/, ''));
+                    chartData.data = coerceChartData(chartData.data);
+                    const defaultPieColors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e', '#eab308'];
+                    // Auto-detect valueKey if not specified
+                    const valueKey = chartData.valueKey || (() => {
+                        if (!chartData.data?.[0]) return 'value';
+                        const numKeys = Object.keys(chartData.data[0]).filter(k => typeof chartData.data[0][k] === 'number');
+                        return numKeys[0] || 'value';
+                    })();
+                    const nameKey = chartData.nameKey || (() => {
+                        if (!chartData.data?.[0]) return 'name';
+                        const strKeys = Object.keys(chartData.data[0]).filter(k => typeof chartData.data[0][k] === 'string');
+                        return strKeys[0] || 'name';
+                    })();
+                    return (
+                        <div className="my-6 border border-[#e5e5e5] rounded-xl overflow-hidden bg-white shadow-sm">
+                            <div className="px-5 py-3.5 border-b border-[#e5e5e5] bg-gray-50/50">
+                                <h4 className="font-semibold text-gray-800 text-[15px]">{chartData.title || "Distribution"}</h4>
+                            </div>
+                            <div className="p-5 flex items-center justify-center" style={{ height: 320 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={chartData.data}
+                                            dataKey={valueKey}
+                                            nameKey={nameKey}
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={110}
+                                            innerRadius={chartData.donut ? 60 : 0}
+                                            paddingAngle={2}
+                                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                            labelLine={{ stroke: '#ccc' }}
+                                        >
+                                            {chartData.data?.map((entry, i) => (
+                                                <Cell key={i} fill={entry.color || defaultPieColors[i % defaultPieColors.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #eee' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    );
+                } catch (e) {
+                    console.error("Failed to parse pie chart data", e);
+                }
+            }
+
+            // 4. GENERATIVE UI - DASHBOARD CARDS (unchanged numbering follows)
             if (!inline && language === 'dashboard') {
                 try {
                     const dashData = JSON.parse(String(children).replace(/\n$/, ''));
@@ -529,10 +645,10 @@ export default function AiChatbotPage() {
 
     // Default static prompts if API shortcuts are few
     const defaultPrompts = [
-        { label: "Who is on the import team?", prompt: "Who is on the import team this week?" },
-        { label: "Analyze Fadwa's performance", prompt: "Analyze Fadwa's performance footprint and top preferred clients." },
-        { label: "Export team summary", prompt: "Summarize the entire export team's performance metrics." },
-        { label: "Auto-assign high volume users", prompt: "Auto-assign high volume users into their optimal departments" }
+        { label: "Top performers this month", prompt: "Who are the top 5 performers this month by total files handled? Show a chart." },
+        { label: "Analyze a user's performance", prompt: "Give me a deep analysis of Fadwa's performance including her top principals and deletion stats." },
+        { label: "Compare last week vs this week", prompt: "Compare the import team's performance last week vs this week." },
+        { label: "Export all employees data", prompt: "Export all employees performance data as a CSV with files, deletions, and avg creation time." }
     ];
 
     // Merge standard prompts with user's specific frequent shortcuts if available

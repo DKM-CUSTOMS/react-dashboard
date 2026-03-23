@@ -9,7 +9,7 @@ import {
   TrendingUp, TrendingDown, FileText, Clock, BarChart3, Zap, Activity, X,
   ArrowLeftRight, FileEdit, Calendar, Printer, RefreshCw, Building2,
   Target, Award, AlertTriangle, CheckCircle, Users, ArrowLeft,
-  ChevronRight, Scale, Flame, Shield, Brain, Lightbulb
+  ChevronRight, Scale, Flame, Shield, Brain, Lightbulb, Trash2
 } from "lucide-react";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler);
@@ -161,13 +161,32 @@ const AnalyticsEngine = {
       });
     }
 
-    // Company specialization synergy
+    // Deletion pattern analysis
+    const del1 = u1.totalDeletions || 0;
+    const del2 = u2.totalDeletions || 0;
+    if (del1 > 10 || del2 > 10) {
+      const highDeleter = del1 > del2 ? u1 : u2;
+      const highDelCount = Math.max(del1, del2);
+      const othersCount = del1 > del2 ? (u1.deletedOthersFiles || 0) : (u2.deletedOthersFiles || 0);
+      if (othersCount > highDelCount * 0.3) {
+        recommendations.push({
+          type: 'deletion',
+          priority: 'medium',
+          title: 'Cross-Deletion Pattern',
+          description: `${highDeleter.name} has ${othersCount} deletions of files created by others (${Math.round(othersCount / highDelCount * 100)}% of total deletions).`,
+          action: 'Review if this indicates quality control or coordination issues.',
+          icon: Trash2
+        });
+      }
+    }
+
+    // Company/Principal specialization synergy
     if (u1.mostActiveCompany !== u2.mostActiveCompany) {
       recommendations.push({
         type: 'synergy',
         priority: 'low',
         title: 'Complementary Specializations',
-        description: `${u1.name} specializes in ${u1.mostActiveCompany}, while ${u2.name} focuses on ${u2.mostActiveCompany}.`,
+        description: `${u1.name} specializes in ${u1.mostActiveCompany} (company) & ${u1.mostActivePrincipal} (principal), while ${u2.name} focuses on ${u2.mostActiveCompany} & ${u2.mostActivePrincipal}.`,
         action: 'Consider cross-training to improve team coverage.',
         icon: Users
       });
@@ -197,10 +216,18 @@ const transformApiData = (apiData, username) => {
     auto: day.automatic_files_created || 0,
     files: (day.manual_files_created || 0) + (day.automatic_files_created || 0),
     modifications: day.modification_count || 0,
+    deleted: (day.deleted_file_ids || []).length,
+    deletedOwn: (day.deleted_own_file_ids || []).length,
+    deletedOthers: (day.deleted_others_file_ids || []).length,
+    avgCreationTime: day.avg_creation_time || 0,
   }));
 
   const companySpecialization = Object.entries(summary.company_specialization || {})
     .map(([company, files]) => ({ company, files }))
+    .sort((a, b) => b.files - a.files);
+
+  const principalSpecialization = Object.entries(summary.principal_specialization || {})
+    .map(([principal, files]) => ({ principal, files }))
     .sort((a, b) => b.files - a.files);
 
   const hourlyActivity = Array.from({ length: 24 }, (_, h) => h)
@@ -209,6 +236,7 @@ const transformApiData = (apiData, username) => {
 
   const activityDays = Object.entries(summary.activity_days || {}).map(([date, count]) => ({ date, count }));
   const mostActiveCompany = companySpecialization[0] || { company: "N/A", files: 0 };
+  const mostActivePrincipal = principalSpecialization[0] || { principal: "N/A", files: 0 };
 
   return {
     user: {
@@ -216,17 +244,21 @@ const transformApiData = (apiData, username) => {
       name: username.replace(".", " ").replace(/\b\w/g, l => l.toUpperCase()),
       totalFiles: summary.total_files_handled || 0,
       totalModifications: summary.total_modifications || 0,
-      avgTime: (summary.avg_creation_time || 0).toFixed(2),
+      totalDeletions: summary.total_deletions || 0,
+      deletedOwnFiles: summary.deleted_own_files || 0,
+      deletedOthersFiles: summary.deleted_others_files || 0,
+      avgTime: (summary.avg_creation_time_minutes || summary.avg_creation_time || 0).toFixed(2),
       avgFilesPerDay: (summary.avg_files_per_day || 0).toFixed(1),
       modificationsPerFile: (summary.modifications_per_file || 0).toFixed(1),
       mostActiveCompany: mostActiveCompany.company,
+      mostActivePrincipal: mostActivePrincipal.principal,
       mostActiveHour: summary.hour_with_most_activity ? `${summary.hour_with_most_activity}:00` : "N/A",
       manualPercentage: Math.round(summary.manual_vs_auto_ratio?.manual_percent || 0),
       autoPercentage: Math.round(summary.manual_vs_auto_ratio?.automatic_percent || 0),
       daysActive: summary.days_active || 0,
     },
     dailyMetrics,
-    charts: { companySpecialization, hourlyActivity, activityDays },
+    charts: { companySpecialization, principalSpecialization, hourlyActivity, activityDays },
   };
 };
 
@@ -371,7 +403,7 @@ const UserSummaryCard = ({ user, data, color, efficiencyScore, consistencyScore 
         <div>
           <h3 className="font-bold text-gray-900 text-lg">{user.name}</h3>
           <p className="text-xs text-gray-500">
-            {user.teamName} • {user.mostActiveCompany} specialist
+            {user.teamName} • {user.mostActivePrincipal || user.mostActiveCompany} specialist
           </p>
         </div>
       </div>
@@ -381,7 +413,7 @@ const UserSummaryCard = ({ user, data, color, efficiencyScore, consistencyScore 
         <ScoreGauge score={consistencyScore.score} label="Consistency" color={color} size="sm" />
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-4 gap-2 text-center">
         <div className={`${c.light} p-2 rounded-sm`}>
           <p className={`text-lg font-bold ${c.text}`}>{user.totalFiles}</p>
           <p className="text-[9px] text-gray-500 uppercase">Files</p>
@@ -393,6 +425,10 @@ const UserSummaryCard = ({ user, data, color, efficiencyScore, consistencyScore 
         <div className={`${c.light} p-2 rounded-sm`}>
           <p className={`text-lg font-bold ${c.text}`}>{user.autoPercentage}%</p>
           <p className="text-[9px] text-gray-500 uppercase">Auto</p>
+        </div>
+        <div className="bg-red-50 p-2 rounded-sm">
+          <p className="text-lg font-bold text-red-600">{user.totalDeletions || 0}</p>
+          <p className="text-[9px] text-gray-500 uppercase">Deleted</p>
         </div>
       </div>
     </div>
@@ -459,9 +495,12 @@ const UserCompareDashboard = () => {
   }, [userList]);
 
   useEffect(() => {
-    if (username1 && username2) loadUsers();
+    if (userList.length >= 2) loadUsers();
     else { setError("Two usernames required"); setLoading(false); }
-  }, [username1, username2, loadUsers]);
+  }, [userList, loadUsers]);
+
+  const data1 = usersData[0] || null;
+  const data2 = usersData[1] || null;
 
   // Computed Analytics
   const analytics = useMemo(() => {
@@ -501,6 +540,13 @@ const UserCompareDashboard = () => {
         datasets: [
           { label: data1.user.name, data: data1.charts.hourlyActivity.map(h => h.activity), backgroundColor: 'rgba(59, 130, 246, 0.8)', barPercentage: 0.6 },
           { label: data2.user.name, data: data2.charts.hourlyActivity.map(h => h.activity), backgroundColor: 'rgba(16, 185, 129, 0.8)', barPercentage: 0.6 }
+        ]
+      },
+      deletions: {
+        labels: allDates.map(d => format(parseISO(d), 'MMM dd')),
+        datasets: [
+          { label: data1.user.name, data: allDates.map(date => data1.dailyMetrics.find(d => d.date === date)?.deleted || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 },
+          { label: data2.user.name, data: allDates.map(date => data2.dailyMetrics.find(d => d.date === date)?.deleted || 0), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.4 }
         ]
       },
       workStyle: {
@@ -616,11 +662,13 @@ const UserCompareDashboard = () => {
               <Scale className="w-4 h-4 text-gray-400" />
               HEAD-TO-HEAD COMPARISON
             </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <MetricCompareCard title="Total Output" icon={FileText} value1={u1.totalFiles} value2={u2.totalFiles} u1Name={u1.name} u2Name={u2.name} />
               <MetricCompareCard title="Daily Average" icon={TrendingUp} value1={u1.avgFilesPerDay} value2={u2.avgFilesPerDay} u1Name={u1.name} u2Name={u2.name} />
               <MetricCompareCard title="Complexity/File" icon={FileEdit} value1={u1.modificationsPerFile} value2={u2.modificationsPerFile} higherIsBetter={true} u1Name={u1.name} u2Name={u2.name} />
               <MetricCompareCard title="Automation" icon={Zap} value1={u1.autoPercentage} value2={u2.autoPercentage} unit="%" u1Name={u1.name} u2Name={u2.name} />
+              <MetricCompareCard title="Deletions" icon={Trash2} value1={u1.totalDeletions} value2={u2.totalDeletions} higherIsBetter={false} u1Name={u1.name} u2Name={u2.name} />
+              <MetricCompareCard title="Avg Time" icon={Clock} value1={u1.avgTime} value2={u2.avgTime} unit="m" higherIsBetter={false} u1Name={u1.name} u2Name={u2.name} />
             </div>
           </div>
 
@@ -656,6 +704,15 @@ const UserCompareDashboard = () => {
               <Bar data={chartData.hourly} options={chartOptions} />
             </ChartCard>
           </div>
+
+          {/* Deletion Trend */}
+          {(u1.totalDeletions > 0 || u2.totalDeletions > 0) && (
+            <div className="grid grid-cols-1 gap-6">
+              <ChartCard title="Deletion Trend" icon={Trash2}>
+                <Line data={chartData.deletions} options={chartOptions} />
+              </ChartCard>
+            </div>
+          )}
 
           {/* Work Style Comparison */}
           <div className="bg-white rounded-sm border border-gray-100 shadow-sm p-5">

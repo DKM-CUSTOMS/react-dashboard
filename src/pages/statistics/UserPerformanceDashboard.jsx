@@ -17,7 +17,7 @@ import {
   RefreshCw, Award,
   User, Clock, FileText, TrendingUp, Calendar, ChevronDown, ChevronRight,
   Activity, X, BarChart3, PieChart, Users, Zap, FileEdit,
-  FilePlus, Search, Download, Scale, ArrowLeft, Check, Eye, Copy
+  FilePlus, Search, Download, Scale, ArrowLeft, Check, Eye, Copy, Trash2
 } from "lucide-react";
 import { format, subDays, eachDayOfInterval, differenceInDays } from "date-fns";
 import { useParams, useNavigate } from "react-router-dom";
@@ -65,6 +65,12 @@ const transformApiData = (apiData) => {
         autoFileIds: Array.isArray(day.automatic_file_ids) ? day.automatic_file_ids : [],
         modificationFileIds: Array.isArray(day.modification_file_ids) ? day.modification_file_ids : [],
         sendingFileIds: Array.isArray(day.sending_file_ids) ? day.sending_file_ids : [],
+        deleted: (day.deleted_file_ids || []).length,
+        deletedOwn: (day.deleted_own_file_ids || []).length,
+        deletedOthers: (day.deleted_others_file_ids || []).length,
+        deletedFileIds: Array.isArray(day.deleted_file_ids) ? day.deleted_file_ids : [],
+        deletedOwnFileIds: Array.isArray(day.deleted_own_file_ids) ? day.deleted_own_file_ids : [],
+        deletedOthersFileIds: Array.isArray(day.deleted_others_file_ids) ? day.deleted_others_file_ids : [],
       };
     });
 
@@ -84,6 +90,12 @@ const transformApiData = (apiData) => {
     .map(([company, files]) => ({ company, files }))
     .sort((a, b) => b.files - a.files);
   const mostActiveCompany = companySpecialization[0] || { company: "N/A", files: 0 };
+
+  // Principal Stats
+  const principalSpecialization = Object.entries(apiData.summary.principal_specialization || {})
+    .map(([principal, files]) => ({ principal, files }))
+    .sort((a, b) => b.files - a.files);
+  const mostActivePrincipal = principalSpecialization[0] || { principal: "N/A", files: 0 };
 
   // Hourly Stats
   const activityByHour = apiData.summary.activity_by_hour || {};
@@ -125,15 +137,23 @@ const transformApiData = (apiData) => {
       mostProductiveDay: apiData.summary.most_productive_day ? format(new Date(apiData.summary.most_productive_day), "dd/MM/yyyy") : "N/A",
       mostActiveCompany: mostActiveCompany.company,
       mostActiveCompanyFiles: mostActiveCompany.files,
+      mostActivePrincipal: mostActivePrincipal.principal,
+      mostActivePrincipalFiles: mostActivePrincipal.files,
       mostActiveHour: `${apiData.summary.hour_with_most_activity}:00`,
       daysActive: apiData.summary.days_active,
       modificationsPerFile: apiData.summary.modifications_per_file.toFixed(2),
       workloadConsistency: workloadAnalysis,
+      totalDeletions: apiData.summary.total_deletions || 0,
+      deletedOwnFiles: apiData.summary.deleted_own_files || 0,
+      deletedOthersFiles: apiData.summary.deleted_others_files || 0,
+      totalManualFiles: apiData.summary.total_manual_files || 0,
+      totalAutoFiles: apiData.summary.total_automatic_files || 0,
     },
     dailyMetrics,
     chartData: {
       dailyFiles,
       companySpecialization,
+      principalSpecialization,
       manualVsAuto: [
         { name: "Manual", value: Math.round(apiData.summary.manual_vs_auto_ratio.manual_percent), color: "#3b82f6" },
         { name: "Auto", value: Math.round(apiData.summary.manual_vs_auto_ratio.automatic_percent), color: "#10b981" },
@@ -335,6 +355,9 @@ const DayDetailModal = ({ isOpen, onClose, dayData }) => {
     { id: 'auto', label: 'Automatic', count: dayData.autoFileIds?.length || 0, color: 'emerald' },
     { id: 'sending', label: 'Sending', count: dayData.sendingFileIds?.length || 0, color: 'purple' },
     { id: 'modifs', label: 'Modifications', count: dayData.modificationFileIds?.length || 0, color: 'orange' },
+    { id: 'deleted', label: 'Deleted', count: dayData.deleted || 0, color: 'red' },
+    { id: 'deleted_own', label: 'Del. Own', count: dayData.deletedOwn || 0, color: 'rose' },
+    { id: 'deleted_others', label: 'Del. Others', count: dayData.deletedOthers || 0, color: 'pink' },
   ];
 
   const getFileIds = () => {
@@ -343,8 +366,10 @@ const DayDetailModal = ({ isOpen, onClose, dayData }) => {
       case 'auto': return dayData.autoFileIds || [];
       case 'sending': return dayData.sendingFileIds || [];
       case 'modifs': return dayData.modificationFileIds || [];
+      case 'deleted': return dayData.deletedFileIds || [];
+      case 'deleted_own': return dayData.deletedOwnFileIds || [];
+      case 'deleted_others': return dayData.deletedOthersFileIds || [];
       default:
-        // Combine all unique IDs
         const all = new Set([
           ...(dayData.manualFileIds || []),
           ...(dayData.autoFileIds || []),
@@ -371,6 +396,9 @@ const DayDetailModal = ({ isOpen, onClose, dayData }) => {
       emerald: isActive ? 'bg-emerald-600 text-white' : 'text-emerald-600 hover:bg-emerald-50',
       purple: isActive ? 'bg-purple-600 text-white' : 'text-purple-600 hover:bg-purple-50',
       orange: isActive ? 'bg-orange-500 text-white' : 'text-orange-600 hover:bg-orange-50',
+      red: isActive ? 'bg-red-600 text-white' : 'text-red-600 hover:bg-red-50',
+      rose: isActive ? 'bg-rose-600 text-white' : 'text-rose-600 hover:bg-rose-50',
+      pink: isActive ? 'bg-pink-600 text-white' : 'text-pink-600 hover:bg-pink-50',
     };
     return colors[color] || colors.gray;
   };
@@ -399,7 +427,7 @@ const DayDetailModal = ({ isOpen, onClose, dayData }) => {
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-5 gap-2 p-4 bg-gray-50/50 border-b border-gray-100">
+        <div className="grid grid-cols-6 gap-2 p-4 bg-gray-50/50 border-b border-gray-100">
           <div className="text-center p-2 bg-white rounded-sm border border-gray-100">
             <p className="text-lg font-bold text-gray-900">{dayData.files}</p>
             <p className="text-[9px] text-gray-500 uppercase font-medium">Total</p>
@@ -419,6 +447,10 @@ const DayDetailModal = ({ isOpen, onClose, dayData }) => {
           <div className="text-center p-2 bg-orange-50 rounded-sm border border-orange-100">
             <p className="text-lg font-bold text-orange-700">{dayData.modifs}</p>
             <p className="text-[9px] text-orange-600 uppercase font-medium">Modifs</p>
+          </div>
+          <div className="text-center p-2 bg-red-50 rounded-sm border border-red-100">
+            <p className="text-lg font-bold text-red-700">{dayData.deleted || 0}</p>
+            <p className="text-[9px] text-red-600 uppercase font-medium">Deleted</p>
           </div>
         </div>
 
@@ -526,19 +558,73 @@ const UserPerformanceDashboard = () => {
 
   // Selection Totals Logic
   const selectionTotals = useMemo(() => {
-    let files = 0, manual = 0, auto = 0, modifs = 0;
+    let files = 0, manual = 0, auto = 0, modifs = 0, deleted = 0;
     selectedRows.forEach(dateStr => {
-      // Find in generated filtered list (filteredMetrics is stable for timeRange)
       const day = filteredMetrics.find(m => m.date === dateStr);
       if (day) {
         files += day.files;
         manual += day.manual;
         auto += day.auto;
         modifs += day.modifs;
+        deleted += day.deleted || 0;
       }
     });
-    return { files, manual, auto, modifs };
+    return { files, manual, auto, modifs, deleted };
   }, [selectedRows, filteredMetrics]);
+
+  // Week-over-Week comparison (last 7 active days vs previous 7 active days)
+  const weekOverWeek = useMemo(() => {
+    if (!data || !data.dailyMetrics || data.dailyMetrics.length === 0) return null;
+
+    const now = new Date();
+    const sevenDaysAgo = subDays(now, 7);
+    const fourteenDaysAgo = subDays(now, 14);
+
+    const thisWeek = data.dailyMetrics.filter(m => m.rawDate > sevenDaysAgo && m.rawDate <= now);
+    const lastWeek = data.dailyMetrics.filter(m => m.rawDate > fourteenDaysAgo && m.rawDate <= sevenDaysAgo);
+
+    const sum = (arr, key) => arr.reduce((s, d) => s + (d[key] || 0), 0);
+    const avg = (arr, key) => {
+      const vals = arr.filter(d => d[key] != null && d[key] !== "0.00").map(d => parseFloat(d[key]));
+      return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+    };
+
+    const tw = {
+      files: sum(thisWeek, 'files'),
+      manual: sum(thisWeek, 'manual'),
+      auto: sum(thisWeek, 'auto'),
+      modifs: sum(thisWeek, 'modifs'),
+      deleted: sum(thisWeek, 'deleted'),
+      avgTime: avg(thisWeek, 'avgTime'),
+      days: thisWeek.length,
+    };
+    const lw = {
+      files: sum(lastWeek, 'files'),
+      manual: sum(lastWeek, 'manual'),
+      auto: sum(lastWeek, 'auto'),
+      modifs: sum(lastWeek, 'modifs'),
+      deleted: sum(lastWeek, 'deleted'),
+      avgTime: avg(lastWeek, 'avgTime'),
+      days: lastWeek.length,
+    };
+
+    const pctChange = (curr, prev) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    };
+
+    return {
+      thisWeek: tw,
+      lastWeek: lw,
+      changes: {
+        files: pctChange(tw.files, lw.files),
+        manual: pctChange(tw.manual, lw.manual),
+        modifs: pctChange(tw.modifs, lw.modifs),
+        deleted: pctChange(tw.deleted, lw.deleted),
+        avgTime: pctChange(tw.avgTime, lw.avgTime),
+      },
+    };
+  }, [data]);
 
   const toggleSelection = (dateStr) => {
     setSelectedRows(prev => {
@@ -562,7 +648,7 @@ const UserPerformanceDashboard = () => {
   const exportToCSV = () => {
     if (!filteredMetrics || filteredMetrics.length === 0) return;
 
-    const headers = ['Date', 'Total Files', 'Manual', 'Automatic', 'Modifications', 'Avg Time (min)', 'Manual File IDs', 'Auto File IDs', 'Modification File IDs'];
+    const headers = ['Date', 'Total Files', 'Manual', 'Automatic', 'Modifications', 'Deleted', 'Deleted Own', 'Deleted Others', 'Avg Time (min)', 'Manual File IDs', 'Auto File IDs', 'Modification File IDs', 'Deleted File IDs', 'Deleted Own File IDs', 'Deleted Others File IDs'];
 
     const rows = filteredMetrics.map(day => [
       day.date,
@@ -570,10 +656,16 @@ const UserPerformanceDashboard = () => {
       day.manual,
       day.auto,
       day.modifs,
+      day.deleted || 0,
+      day.deletedOwn || 0,
+      day.deletedOthers || 0,
       day.avgTime,
       day.manualFileIds?.join('; ') || '',
       day.autoFileIds?.join('; ') || '',
-      day.modificationFileIds?.join('; ') || ''
+      day.modificationFileIds?.join('; ') || '',
+      day.deletedFileIds?.join('; ') || '',
+      day.deletedOwnFileIds?.join('; ') || '',
+      day.deletedOthersFileIds?.join('; ') || ''
     ]);
 
     const csvContent = [
@@ -669,12 +761,13 @@ const UserPerformanceDashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
         <StatCard label="Productivity" value={data.user.avgFilesPerDay} sub="Files / Active Day" icon={TrendingUp} themeObj={themeColors} />
         <StatCard label="Efficiency" value={`${data.user.avgTime}m`} sub="Avg Creation Time" icon={Clock} themeObj={themeColors} />
         <StatCard label="Quality" value={data.user.modificationsPerFile} sub="Mods / File" icon={FileEdit} themeObj={themeColors} />
         <StatCard label="Peak Time" value={data.user.mostActiveHour} sub="Most Active Hour" icon={Zap} themeObj={themeColors} />
-        <StatCard label="Top Client" value={data.user.mostActiveCompanyFiles} sub={data.user.mostActiveCompany} icon={Award} themeObj={themeColors} />
+        <StatCard label="Top Principal" value={data.user.mostActivePrincipal} sub={`${data.user.mostActivePrincipalFiles.toLocaleString()} files`} icon={Award} themeObj={themeColors} />
+        <StatCard label="Deletions" value={data.user.totalDeletions} sub={`Own: ${data.user.deletedOwnFiles} | Others: ${data.user.deletedOthersFiles}`} icon={Trash2} themeObj={themeColors} />
       </div>
 
       {/* Insights Section */}
@@ -700,35 +793,51 @@ const UserPerformanceDashboard = () => {
           </div>
         </div>
 
-        {/* Performance Highlights */}
+        {/* Week-over-Week Comparison */}
         <div className="bg-white p-5 rounded-sm border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-6 text-gray-400">
-            <Zap className="w-4 h-4" />
-            <h3 className="text-xs font-bold uppercase tracking-wide">Performance Highlights</h3>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2 text-gray-400">
+              <TrendingUp className="w-4 h-4" />
+              <h3 className="text-xs font-bold uppercase tracking-wide">Week over Week</h3>
+            </div>
+            <div className="flex items-center gap-2 text-[9px] text-gray-400 font-medium">
+              <span className="px-1.5 py-0.5 bg-gray-100 rounded-sm">Last 7 days vs previous 7</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase text-gray-400 font-bold mb-1">Most Productive Day</span>
-              <span className="text-lg font-bold text-gray-800">{data.user.mostProductiveDay}</span>
-              <span className="text-[10px] text-green-600 font-medium">Peak activity day</span>
+          {weekOverWeek ? (
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: 'Files Created', curr: weekOverWeek.thisWeek.files, prev: weekOverWeek.lastWeek.files, change: weekOverWeek.changes.files, higherIsBetter: true },
+                { label: 'Modifications', curr: weekOverWeek.thisWeek.modifs, prev: weekOverWeek.lastWeek.modifs, change: weekOverWeek.changes.modifs, higherIsBetter: false },
+                { label: 'Deletions', curr: weekOverWeek.thisWeek.deleted, prev: weekOverWeek.lastWeek.deleted, change: weekOverWeek.changes.deleted, higherIsBetter: false },
+                { label: 'Manual Files', curr: weekOverWeek.thisWeek.manual, prev: weekOverWeek.lastWeek.manual, change: weekOverWeek.changes.manual, higherIsBetter: true },
+                { label: 'Avg Time (s)', curr: weekOverWeek.thisWeek.avgTime.toFixed(1), prev: weekOverWeek.lastWeek.avgTime.toFixed(1), change: weekOverWeek.changes.avgTime, higherIsBetter: false },
+                { label: 'Active Days', curr: weekOverWeek.thisWeek.days, prev: weekOverWeek.lastWeek.days, change: null, higherIsBetter: true },
+              ].map((metric) => {
+                const isPositive = metric.change > 0;
+
+                return (
+                  <div key={metric.label} className="flex flex-col p-2.5 rounded-sm border border-gray-100 bg-gray-50/50">
+                    <span className="text-[9px] uppercase text-gray-400 font-bold mb-1.5 tracking-wider">{metric.label}</span>
+                    <div className="flex items-end justify-between">
+                      <span className="text-lg font-bold text-gray-800">{metric.curr}</span>
+                      {metric.change !== null && metric.change !== 0 ? (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm ${isPositive ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                          {isPositive ? '+' : ''}{metric.change}%
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium text-gray-400 px-1.5 py-0.5 bg-gray-100 rounded-sm border border-gray-200">--</span>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-gray-400 mt-1">prev: {metric.prev}</span>
+                  </div>
+                );
+              })}
             </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase text-gray-400 font-bold mb-1">Avg Output</span>
-              <span className="text-lg font-bold text-gray-800">{data.user.avgFilesPerDay}</span>
-              <span className="text-[10px] text-blue-600 font-medium">Files per active day</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase text-gray-400 font-bold mb-1">Work Rhythm</span>
-              <span className="text-lg font-bold text-gray-800">{data.user.mostActiveHour}</span>
-              <span className="text-[10px] text-orange-600 font-medium">Peak productivity window</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase text-gray-400 font-bold mb-1">Active Days</span>
-              <span className="text-lg font-bold text-gray-800">{data.user.daysActive}</span>
-              <span className="text-[10px] text-gray-500 font-medium">In last 90 days</span>
-            </div>
-          </div>
+          ) : (
+            <p className="text-xs text-gray-400 text-center py-6">Not enough data for comparison</p>
+          )}
         </div>
       </div>
 
@@ -852,13 +961,13 @@ const UserPerformanceDashboard = () => {
         </div>
 
         <div className="h-72">
-          <ChartSection title="Top Companies" icon={Users}>
+          <ChartSection title="Top Principals" icon={Users}>
             <Bar
               data={{
-                labels: data.chartData.companySpecialization.slice(0, 5).map(c => c.company),
+                labels: data.chartData.principalSpecialization.slice(0, 5).map(c => c.principal),
                 datasets: [{
                   label: 'Files',
-                  data: data.chartData.companySpecialization.slice(0, 5).map(c => c.files),
+                  data: data.chartData.principalSpecialization.slice(0, 5).map(c => c.files),
                   backgroundColor: '#8b5cf6',
                   borderRadius: 2
                 }]
@@ -941,13 +1050,14 @@ const UserPerformanceDashboard = () => {
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Output</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Breakdown</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Modifications</th>
+                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Deleted</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Avg Time</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredMetrics.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-8 text-xs text-gray-400">No activity found for this period.</td></tr>
+                <tr><td colSpan={9} className="text-center py-8 text-xs text-gray-400">No activity found for this period.</td></tr>
               ) : filteredMetrics.map((day) => {
                 const dateKey = day.date;
                 const isSelected = selectedRows.has(dateKey);
@@ -983,6 +1093,22 @@ const UserPerformanceDashboard = () => {
                           {day.modifs}
                         </span>
                       </td>
+                      <td className="px-6 py-3 text-center">
+                        {day.deleted > 0 ? (
+                          <div className="flex items-center justify-center gap-1.5 text-[10px]">
+                            <span className="px-1.5 py-0.5 bg-red-50 text-red-700 rounded-sm border border-red-100" title={`Own: ${day.deletedOwn} | Others: ${day.deletedOthers}`}>
+                              {day.deleted}
+                            </span>
+                            {day.deletedOthers > 0 && (
+                              <span className="px-1 py-0.5 bg-pink-50 text-pink-700 rounded-sm border border-pink-100 font-bold" title="Deleted others' files">
+                                {day.deletedOthers}!
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">0</span>
+                        )}
+                      </td>
                       <td className="px-6 py-3 text-center text-xs text-gray-500">{day.avgTime} m</td>
                       <td className="px-6 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
@@ -998,7 +1124,7 @@ const UserPerformanceDashboard = () => {
                     {/* Expanded Detail Row */}
                     {isExpanded && (
                       <tr className="bg-gray-50/50">
-                        <td colSpan={8} className="px-6 py-4 border-t border-gray-100 shadow-inner">
+                        <td colSpan={9} className="px-6 py-4 border-t border-gray-100 shadow-inner">
                           <div className="flex flex-col gap-3 text-xs pl-12">
                             {day.manual > 0 && (
                               <div className="flex items-start gap-2">
@@ -1036,7 +1162,25 @@ const UserPerformanceDashboard = () => {
                                 </div>
                               </div>
                             )}
-                            {day.manual === 0 && day.auto === 0 && day.modifs === 0 && (!day.sendingFileIds || day.sendingFileIds.length === 0) && (
+                            {day.deletedOwnFileIds?.length > 0 && (
+                              <div className="flex items-start gap-2">
+                                <span className="font-bold text-red-600 uppercase tracking-wider min-w-[80px] pt-1">Del. Own ({day.deletedOwn}):</span>
+                                <div className="flex-1 flex flex-wrap gap-1">
+                                  {day.deletedOwnFileIds.slice(0, 50).map((id, idx) => <CopyBadge key={`do-${id}-${idx}`} id={id} />)}
+                                  {day.deletedOwnFileIds.length > 50 && <span className="text-gray-400 text-[10px] self-center">+{day.deletedOwnFileIds.length - 50} more</span>}
+                                </div>
+                              </div>
+                            )}
+                            {day.deletedOthersFileIds?.length > 0 && (
+                              <div className="flex items-start gap-2">
+                                <span className="font-bold text-pink-700 uppercase tracking-wider min-w-[80px] pt-1">Del. Others ({day.deletedOthers}):</span>
+                                <div className="flex-1 flex flex-wrap gap-1">
+                                  {day.deletedOthersFileIds.slice(0, 50).map((id, idx) => <CopyBadge key={`doth-${id}-${idx}`} id={id} />)}
+                                  {day.deletedOthersFileIds.length > 50 && <span className="text-gray-400 text-[10px] self-center">+{day.deletedOthersFileIds.length - 50} more</span>}
+                                </div>
+                              </div>
+                            )}
+                            {day.manual === 0 && day.auto === 0 && day.modifs === 0 && day.deleted === 0 && (!day.sendingFileIds || day.sendingFileIds.length === 0) && (
                               <p className="text-gray-400 italic">No specific file IDs available.</p>
                             )}
                           </div>
@@ -1073,6 +1217,10 @@ const UserPerformanceDashboard = () => {
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Modifs</span>
               <span className="font-bold text-sm">{selectionTotals.modifs}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wider text-red-400 font-bold">Deleted</span>
+              <span className="font-bold text-sm">{selectionTotals.deleted}</span>
             </div>
             <button
               onClick={() => setSelectedRows(new Set())}

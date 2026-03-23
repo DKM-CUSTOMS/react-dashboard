@@ -2,22 +2,14 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import Fuse from "fuse.js";
 import { BlobServiceClient } from '@azure/storage-blob';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // In-memory Azure State Cache
 export const AZURE_CACHE = {
-    monthly_report: [],
-    users_summary: [],
+    employees: [],  // [{ user, summary }] sourced from individual usersV3/ blobs
     teams: { import: [], export: [], customs: [] }
 };
 
 const CONTAINER_NAME = "document-intelligence";
-const TEAMS_FILE = "Dashboard/cache/teams.json";
+const USERS_BLOB_PREFIX = "Dashboard/cache/usersV3/";
 
 function getBlobServiceClient() {
     const connStr = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
@@ -27,32 +19,48 @@ function getBlobServiceClient() {
     return BlobServiceClient.fromConnectionString(connStr);
 }
 
-// Ensure the cache gets hydrated
+// Ensure the cache gets hydrated — single source of truth: individual user blobs
 export async function hydrateAzureCache() {
-    console.log("Hydrating AI Azure Cache...");
+    console.log("Hydrating AI Azure Cache from individual user blobs...");
     try {
         const client = getBlobServiceClient();
         const containerClient = client.getContainerClient(CONTAINER_NAME);
 
-        // Fetch Users Summary
-        const summaryBlob = containerClient.getBlockBlobClient("Dashboard/cache/users_summaryV3.json");
+        // List all individual user blobs and cache their summaries
         try {
-            const sumBuffer = await summaryBlob.downloadToBuffer();
-            AZURE_CACHE.users_summary = JSON.parse(sumBuffer.toString("utf8"));
+            const userNames = [];
+            for await (const blob of containerClient.listBlobsFlat({ prefix: USERS_BLOB_PREFIX })) {
+                if (blob.name.endsWith('.json')) {
+                    const userName = blob.name.replace(USERS_BLOB_PREFIX, '').replace('.json', '');
+                    userNames.push(userName);
+                }
+            }
+
+            // Fetch summaries in parallel (batched to avoid overwhelming Azure)
+            const batchSize = 15;
+            const allEmployees = [];
+            for (let i = 0; i < userNames.length; i += batchSize) {
+                const batch = userNames.slice(i, i + batchSize);
+                const results = await Promise.allSettled(
+                    batch.map(async (userName) => {
+                        const blob = containerClient.getBlockBlobClient(`${USERS_BLOB_PREFIX}${userName}.json`);
+                        const buffer = await blob.downloadToBuffer();
+                        const data = JSON.parse(buffer.toString("utf8"));
+                        return { user: userName, summary: data.summary || {} };
+                    })
+                );
+                for (const r of results) {
+                    if (r.status === 'fulfilled') allEmployees.push(r.value);
+                }
+            }
+
+            AZURE_CACHE.employees = allEmployees;
+            console.log(`Cached ${AZURE_CACHE.employees.length} employee summaries from individual blobs.`);
         } catch (e) {
-            console.warn("Could not fetch users_summaryV3.json", e.message);
+            console.warn("Could not list/fetch usersV3 blobs:", e.message);
         }
 
-        // Fetch Monthly Report
-        const monthlyBlob = containerClient.getBlockBlobClient("Dashboard/cache/monthly_report_cacheV3.json");
-        try {
-            const monthlyBuffer = await monthlyBlob.downloadToBuffer();
-            AZURE_CACHE.monthly_report = JSON.parse(monthlyBuffer.toString("utf8"));
-        } catch (e) {
-            console.warn("Could not fetch monthly_report_cacheV3.json", e.message);
-        }
-
-        // Fetch Teams or local DB equivalent
+        // Fetch Teams
         await refreshTeamsCache();
 
     } catch (e) {
@@ -105,19 +113,8 @@ function resolveEmployeeName(searchName) {
         }
     }
 
-    // Build Master List of Usernames
-    let allUsers = new Set();
-    if (Array.isArray(AZURE_CACHE.monthly_report)) {
-        AZURE_CACHE.monthly_report.forEach(u => u.user && allUsers.add(u.user));
-    } else if (AZURE_CACHE.monthly_report && AZURE_CACHE.monthly_report.users_summary) {
-        AZURE_CACHE.monthly_report.users_summary.forEach(u => u.user && allUsers.add(u.user));
-    }
-
-    if (Array.isArray(AZURE_CACHE.users_summary)) {
-        AZURE_CACHE.users_summary.forEach(u => u.user && allUsers.add(u.user));
-    }
-
-    const allUsersArray = Array.from(allUsers);
+    // Build Master List of Usernames from individual employee blobs
+    const allUsersArray = AZURE_CACHE.employees.map(e => e.user);
 
     // 1. Check for exact match against first name or last name independently
     const exactNameMatch = allUsersArray.find(u => {
@@ -174,113 +171,131 @@ export const getTeamsList = new DynamicStructuredTool({
     },
 });
 
-// ═══ TOOL: Get Daily Summary (10-day activity window) ═══
-export const getDailySummary = new DynamicStructuredTool({
-    name: "get_daily_summary",
-    description: "Fetch the 10-day activity summary showing day-by-day file creation counts for all employees. Optionally filter by a specific employee name. Use this for recent activity trends and short-term patterns.",
+// ═══ TOOL: Get All Employees Overview (sourced from individual user blobs) ═══
+export const getAllEmployeesOverview = new DynamicStructuredTool({
+    name: "get_all_employees_overview",
+    description: "Fetch a summary overview of ALL employees. Shows total files, manual/auto breakdown, deletions, days active, avg files per day, avg creation time, and top principal. Sortable by multiple fields. Optionally filter by start_date/end_date to see stats for a specific period (e.g. last week, this month). When dates are provided, daily_metrics are summed per employee for that range. Use this for rankings, company-wide comparisons, and broad performance questions.",
     schema: z.object({
-        employee_name: z.string().nullable().optional().describe("Optional: filter results for a specific employee. Leave empty or null to get all employees."),
+        sort_by: z.enum(["total_files_handled", "avg_files_per_day", "days_active", "total_manual_files", "total_automatic_files", "total_deletions", "total_modifications"]).nullable().optional().describe("Optional: field to sort results by. Defaults to total_files_handled."),
+        start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format for period filtering"),
+        end_date: z.string().optional().describe("Optional end date in YYYY-MM-DD format for period filtering"),
     }),
-    func: async ({ employee_name } = {}) => {
-        if (!Array.isArray(AZURE_CACHE.users_summary) || AZURE_CACHE.users_summary.length === 0) {
-            return "Error: Daily summary data is not available in the system.";
+    func: async ({ sort_by, start_date, end_date } = {}) => {
+        if (!AZURE_CACHE.employees || AZURE_CACHE.employees.length === 0) {
+            return "Error: Employee data is not available. The cache may not have been initialized.";
         }
 
-        // If filtering by a specific employee
-        if (employee_name) {
-            const resolvedName = resolveEmployeeName(employee_name);
-            if (!resolvedName) return `Error: No employee found matching '${employee_name}'.`;
-
-            const userData = AZURE_CACHE.users_summary.find(u => u.user === resolvedName);
-            if (!userData) return `Error: No daily summary data found for '${resolvedName}'.`;
-
-            const daily = userData.daily_file_creations || {};
-            const totalFiles = Object.values(daily).reduce((a, b) => a + b, 0);
-            const activeDays = Object.values(daily).filter(v => v > 0).length;
-            const bestDay = Object.entries(daily).sort((a, b) => b[1] - a[1])[0];
-
-            let report = `10-Day Activity Summary for ${resolvedName}:\n`;
-            report += `Daily breakdown:\n`;
-            for (const [date, count] of Object.entries(daily)) {
-                report += `  ${date}: ${count} files\n`;
-            }
-            report += `\nTotal files (10 days): ${totalFiles}\n`;
-            report += `Active days: ${activeDays} / ${Object.keys(daily).length}\n`;
-            report += `Average per active day: ${activeDays > 0 ? (totalFiles / activeDays).toFixed(1) : 0}\n`;
-            if (bestDay) report += `Best day: ${bestDay[0]} (${bestDay[1]} files)\n`;
-            return report;
-        }
-
-        // Return overview of all employees
-        const allUsers = AZURE_CACHE.users_summary
-            .map(u => {
-                const daily = u.daily_file_creations || {};
-                const total = Object.values(daily).reduce((a, b) => a + b, 0);
-                return { user: u.user, total, daily };
-            })
-            .filter(u => u.total > 0)
-            .sort((a, b) => b.total - a.total);
-
-        let report = `10-Day Activity Summary (${allUsers.length} active employees):\n\n`;
-        for (const u of allUsers) {
-            const dailyStr = Object.entries(u.daily).map(([d, c]) => `${d}:${c}`).join(' | ');
-            report += `${u.user}: ${u.total} total files | ${dailyStr}\n`;
-        }
-        return report;
-    },
-});
-
-// ═══ TOOL: Get Monthly Report (30-day aggregated stats) ═══
-export const getMonthlyReport = new DynamicStructuredTool({
-    name: "get_monthly_report",
-    description: "Fetch the 30-day aggregated monthly report with total files, manual vs automatic breakdown, activity days, and averages for all employees. Use this for overall performance rankings, monthly comparisons, and company-wide statistics.",
-    schema: z.object({
-        employee_name: z.string().nullable().optional().describe("Optional: filter results for a specific employee. Leave empty or null to get the full report."),
-        sort_by: z.enum(["total_files_handled", "avg_activity_per_day", "days_with_activity", "manual_files", "automatic_files", "sent_files"]).nullable().optional().describe("Optional: field to sort results by. Defaults to total_files_handled."),
-    }),
-    func: async ({ employee_name, sort_by } = {}) => {
-        let reportData = AZURE_CACHE.monthly_report;
-        if (reportData && !Array.isArray(reportData) && reportData.users_summary) {
-            reportData = reportData.users_summary;
-        }
-
-        if (!Array.isArray(reportData) || reportData.length === 0) {
-            return "Error: Monthly report data is not available in the system.";
-        }
-
-        // If filtering by a specific employee
-        if (employee_name) {
-            const resolvedName = resolveEmployeeName(employee_name);
-            if (!resolvedName) return `Error: No employee found matching '${employee_name}'.`;
-
-            const userData = reportData.find(u => u.user === resolvedName);
-            if (!userData) return `Error: No monthly report data found for '${resolvedName}'.`;
-
-            let report = `30-Day Monthly Report for ${resolvedName}:\n`;
-            report += `- Total files handled: ${userData.total_files_handled}\n`;
-            report += `- Manual files: ${userData.manual_files}\n`;
-            report += `- Automatic files: ${userData.automatic_files}\n`;
-            report += `- Sent files: ${userData.sent_files}\n`;
-            report += `- Days with activity: ${userData.days_with_activity}\n`;
-            report += `- Avg activity per day: ${userData.avg_activity_per_day}\n`;
-            if (userData.manual_vs_auto_ratio) {
-                report += `- Manual vs Auto ratio: ${userData.manual_vs_auto_ratio.manual_percent}% manual / ${userData.manual_vs_auto_ratio.automatic_percent}% automatic\n`;
-            }
-            return report;
-        }
-
-        // Return full monthly report sorted
+        const useDateFilter = !!(start_date || end_date);
         const sortField = sort_by || "total_files_handled";
-        const sorted = [...reportData]
-            .filter(u => u.total_files_handled > 0 || u.days_with_activity > 0)
-            .sort((a, b) => (b[sortField] || 0) - (a[sortField] || 0));
 
-        let report = `30-Day Monthly Report (${sorted.length} employees, sorted by ${sortField}):\n\n`;
-        for (const u of sorted) {
-            const ratio = u.manual_vs_auto_ratio
-                ? `${u.manual_vs_auto_ratio.manual_percent}%M/${u.manual_vs_auto_ratio.automatic_percent}%A`
+        // If date filtering is requested, we need to read full blobs and sum daily_metrics
+        if (useDateFilter) {
+            let report = `All Employees Overview — Period: ${start_date || 'beginning'} to ${end_date || 'now'} (sorted by ${sortField}):\n\n`;
+
+            try {
+                const client = getBlobServiceClient();
+                const containerClient = client.getContainerClient(CONTAINER_NAME);
+
+                const employeeStats = [];
+                const batchSize = 15;
+                const userNames = AZURE_CACHE.employees.map(e => e.user);
+
+                for (let i = 0; i < userNames.length; i += batchSize) {
+                    const batch = userNames.slice(i, i + batchSize);
+                    const results = await Promise.allSettled(
+                        batch.map(async (userName) => {
+                            const blob = containerClient.getBlockBlobClient(`${USERS_BLOB_PREFIX}${userName}.json`);
+                            const buffer = await blob.downloadToBuffer();
+                            const data = JSON.parse(buffer.toString("utf8"));
+
+                            // Filter daily_metrics by date range
+                            const filtered = (data.daily_metrics || []).filter(day => {
+                                const d = new Date(day.date);
+                                let within = true;
+                                if (start_date && d < new Date(start_date)) within = false;
+                                if (end_date && d > new Date(end_date)) within = false;
+                                return within;
+                            });
+
+                            // Sum up stats for the filtered period
+                            let totalFiles = 0, manual = 0, auto = 0, deletions = 0, modifications = 0;
+                            let delOwn = 0, delOthers = 0, avgTimeSum = 0, avgTimeCount = 0;
+                            for (const day of filtered) {
+                                totalFiles += (day.total_files_handled || 0);
+                                manual += (day.manual_files_created || 0);
+                                auto += (day.automatic_files_created || 0);
+                                deletions += (day.deleted_file_ids || []).length;
+                                delOwn += (day.deleted_own_file_ids || []).length;
+                                delOthers += (day.deleted_others_file_ids || []).length;
+                                modifications += (day.modification_count || 0);
+                                if (day.avg_creation_time !== null && day.avg_creation_time !== undefined) {
+                                    avgTimeSum += day.avg_creation_time;
+                                    avgTimeCount++;
+                                }
+                            }
+
+                            return {
+                                user: userName,
+                                total_files_handled: totalFiles,
+                                total_manual_files: manual,
+                                total_automatic_files: auto,
+                                total_deletions: deletions,
+                                deleted_own_files: delOwn,
+                                deleted_others_files: delOthers,
+                                total_modifications: modifications,
+                                days_active: filtered.length,
+                                avg_files_per_day: filtered.length > 0 ? +(totalFiles / filtered.length).toFixed(1) : 0,
+                                avg_creation_time: avgTimeCount > 0 ? +(avgTimeSum / avgTimeCount).toFixed(1) : null,
+                            };
+                        })
+                    );
+                    for (const r of results) {
+                        if (r.status === 'fulfilled') employeeStats.push(r.value);
+                    }
+                }
+
+                const sorted = employeeStats
+                    .filter(e => e.total_files_handled > 0 || e.days_active > 0)
+                    .sort((a, b) => ((b[sortField] || 0) - (a[sortField] || 0)));
+
+                for (const e of sorted) {
+                    const manualPct = e.total_files_handled > 0 ? Math.round(e.total_manual_files / e.total_files_handled * 100) : 0;
+                    const autoPct = 100 - manualPct;
+                    const delStr = e.total_deletions ? ` | del: ${e.total_deletions} (own:${e.deleted_own_files}/others:${e.deleted_others_files})` : '';
+                    const avgTime = e.avg_creation_time !== null ? ` | avgTime: ${e.avg_creation_time}s` : '';
+                    report += `${e.user}: ${e.total_files_handled} files (${e.total_manual_files}M/${e.total_automatic_files}A) | ${e.avg_files_per_day} avg/day | ${e.days_active} active days | ${manualPct}%M/${autoPct}%A${delStr}${avgTime}\n`;
+                }
+
+                report += `\nTotal: ${sorted.length} employees with activity in this period.`;
+                return report;
+
+            } catch (e) {
+                return `Error reading employee data for date filtering: ${e.message}`;
+            }
+        }
+
+        // No date filter — use cached summaries (fast path)
+        const sorted = [...AZURE_CACHE.employees]
+            .filter(e => e.summary && ((e.summary.total_files_handled || 0) > 0 || (e.summary.days_active || 0) > 0))
+            .sort((a, b) => ((b.summary[sortField] || 0) - (a.summary[sortField] || 0)));
+
+        let report = `All Employees Overview (${sorted.length} employees, sorted by ${sortField}):\n\n`;
+        for (const e of sorted) {
+            const s = e.summary;
+            const ratio = s.manual_vs_auto_ratio
+                ? `${s.manual_vs_auto_ratio.manual_percent}%M/${s.manual_vs_auto_ratio.automatic_percent}%A`
                 : "N/A";
-            report += `${u.user}: ${u.total_files_handled} files | ${u.avg_activity_per_day} avg/day | ${u.days_with_activity} active days | ${ratio} | sent: ${u.sent_files}\n`;
+            const delStr = s.total_deletions ? ` | del: ${s.total_deletions} (own:${s.deleted_own_files || 0}/others:${s.deleted_others_files || 0})` : '';
+            const avgTime = s.avg_creation_time !== undefined && s.avg_creation_time !== null ? ` | avgTime: ${s.avg_creation_time}s` : '';
+
+            // Top principal
+            let topPrincipal = '';
+            if (s.principal_specialization && Object.keys(s.principal_specialization).length > 0) {
+                const top = Object.entries(s.principal_specialization).sort((a, b) => b[1] - a[1])[0];
+                topPrincipal = ` | top principal: ${top[0]} (${top[1]})`;
+            }
+
+            report += `${e.user}: ${s.total_files_handled || 0} files (${s.total_manual_files || 0}M/${s.total_automatic_files || 0}A) | ${s.avg_files_per_day || 0} avg/day | ${s.days_active || 0} active days | ${ratio}${delStr}${avgTime}${topPrincipal}\n`;
         }
         return report;
     },
@@ -289,7 +304,7 @@ export const getMonthlyReport = new DynamicStructuredTool({
 // ═══ TOOL: Get Employee Data (deep individual analytics) ═══
 export const getEmployeeData = new DynamicStructuredTool({
     name: "get_employee_data",
-    description: "Fetch deep individual analytics for a specific employee including daily metrics, peak hours, company specialization, file type breakdown, and productivity patterns. Optionally filter daily metrics by providing start_date and end_date. Use this for detailed questions about a specific person.",
+    description: "Fetch deep individual analytics for a specific employee including daily metrics, peak hours, company specialization, principal specialization, file type breakdown, deletion stats (own vs others), avg creation time, and productivity patterns. Optionally filter daily metrics by providing start_date and end_date. Use this for detailed questions about a specific person.",
     schema: z.object({
         employee_name: z.string().describe("The name or partial name of the employee"),
         start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format"),
@@ -326,9 +341,25 @@ export const getEmployeeData = new DynamicStructuredTool({
                     report += `- Avg files per day: ${s.avg_files_per_day}\n`;
                     report += `- Days active: ${s.days_active}\n`;
                     report += `- Most productive day: ${s.most_productive_day}\n`;
+                    if (s.avg_creation_time !== undefined && s.avg_creation_time !== null) {
+                        report += `- Avg creation time: ${s.avg_creation_time}s (${s.avg_creation_time_minutes ? s.avg_creation_time_minutes.toFixed(1) + ' min' : 'N/A'})\n`;
+                    }
+                    if (s.modifications_per_file !== undefined) {
+                        report += `- Modifications per file: ${s.modifications_per_file}\n`;
+                    }
 
                     if (s.manual_vs_auto_ratio) {
                         report += `- Manual vs Auto: ${s.manual_vs_auto_ratio.manual_percent}% manual / ${s.manual_vs_auto_ratio.automatic_percent}% automatic\n`;
+                    }
+
+                    // Deletion stats
+                    if (s.total_deletions !== undefined) {
+                        report += `\nDELETION STATS:\n`;
+                        report += `- Total deletions: ${s.total_deletions}\n`;
+                        report += `- Deleted own files: ${s.deleted_own_files || 0}\n`;
+                        report += `- Deleted others' files: ${s.deleted_others_files || 0}\n`;
+                        report += `- Deleted manual files: ${s.deleted_manual_files || 0}\n`;
+                        report += `- Deleted automatic files: ${s.deleted_automatic_files || 0}\n`;
                     }
 
                     // Peak activity hours
@@ -350,8 +381,19 @@ export const getEmployeeData = new DynamicStructuredTool({
                             .sort((a, b) => b[1] - a[1])
                             .slice(0, 5)
                             .map(([name, count]) => `${name}: ${count} (${((count / totalCompanyWork) * 100).toFixed(1)}%)`);
-                        report += `\nTOP CLIENTS:\n`;
+                        report += `\nTOP CLIENTS (Companies):\n`;
                         clients.forEach(c => report += `  - ${c}\n`);
+                    }
+
+                    // Principal specialization
+                    if (s.principal_specialization && Object.keys(s.principal_specialization).length > 0) {
+                        const totalPrincipalWork = Object.values(s.principal_specialization).reduce((a, b) => a + b, 0);
+                        const principals = Object.entries(s.principal_specialization)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 10)
+                            .map(([name, count]) => `${name}: ${count} (${((count / totalPrincipalWork) * 100).toFixed(1)}%)`);
+                        report += `\nTOP PRINCIPALS:\n`;
+                        principals.forEach(p => report += `  - ${p}\n`);
                     }
 
                     // File type breakdown
@@ -381,10 +423,34 @@ export const getEmployeeData = new DynamicStructuredTool({
                         });
                         
                         let periodTotal = 0;
+                        let periodManual = 0;
+                        let periodAuto = 0;
+                        let periodDeletions = 0;
+                        let periodDeletedOwn = 0;
+                        let periodDeletedOthers = 0;
+                        let periodModifications = 0;
+                        let periodAvgTimeSum = 0;
+                        let periodAvgTimeCount = 0;
                         for (const day of recent) {
                             periodTotal += day.total_files_handled;
+                            periodManual += (day.manual_files_created || 0);
+                            periodAuto += (day.automatic_files_created || 0);
+                            periodDeletions += (day.deleted_file_ids || []).length;
+                            periodDeletedOwn += (day.deleted_own_file_ids || []).length;
+                            periodDeletedOthers += (day.deleted_others_file_ids || []).length;
+                            periodModifications += (day.modification_count || 0);
+                            if (day.avg_creation_time !== null && day.avg_creation_time !== undefined) {
+                                periodAvgTimeSum += day.avg_creation_time;
+                                periodAvgTimeCount++;
+                            }
                         }
-                        report += `\nFILTERED PERIOD TOTAL FILES: ${periodTotal}\n`;
+                        const periodAvgTime = periodAvgTimeCount > 0 ? (periodAvgTimeSum / periodAvgTimeCount).toFixed(1) : 'N/A';
+                        report += `\nFILTERED PERIOD TOTALS (${recent.length} days):\n`;
+                        report += `- Files: ${periodTotal} (${periodManual} manual / ${periodAuto} automatic)\n`;
+                        report += `- Modifications: ${periodModifications}\n`;
+                        report += `- Deletions: ${periodDeletions} (own: ${periodDeletedOwn} / others: ${periodDeletedOthers})\n`;
+                        report += `- Avg creation time: ${periodAvgTime}s\n`;
+                        report += `- Avg files per day: ${recent.length > 0 ? (periodTotal / recent.length).toFixed(1) : 0}\n`;
                     } else {
                         recent = recent.slice(-10);
                     }
@@ -392,7 +458,12 @@ export const getEmployeeData = new DynamicStructuredTool({
                     if (recent.length > 0) {
                         report += `\nDAILY METRICS (${start_date || end_date ? 'Filtered' : 'last ' + recent.length + ' days'}):\n`;
                         for (const day of recent) {
-                            report += `  ${day.date}: ${day.total_files_handled} files (${day.manual_files_created}M/${day.automatic_files_created}A) | ${day.modification_count} modifications\n`;
+                            const deleted = (day.deleted_file_ids || []).length;
+                            const deletedOwn = (day.deleted_own_file_ids || []).length;
+                            const deletedOthers = (day.deleted_others_file_ids || []).length;
+                            const avgTime = day.avg_creation_time !== null && day.avg_creation_time !== undefined ? ` | avg time: ${day.avg_creation_time}s` : '';
+                            const delInfo = deleted > 0 ? ` | ${deleted} deleted (own:${deletedOwn}/others:${deletedOthers})` : '';
+                            report += `  ${day.date}: ${day.total_files_handled} files (${day.manual_files_created}M/${day.automatic_files_created}A) | ${day.modification_count} modifs${delInfo}${avgTime}\n`;
                         }
                     } else {
                         report += `\nNo daily metrics found for the specified period.\n`;
@@ -400,15 +471,13 @@ export const getEmployeeData = new DynamicStructuredTool({
                 }
 
             } else {
-                // Fallback to monthly report cache
-                const monthlyData = Array.isArray(AZURE_CACHE.monthly_report)
-                    ? AZURE_CACHE.monthly_report.find(item => item.user === resolvedName)
-                    : null;
-                if (monthlyData) {
-                    report += `(Limited data - no detailed profile available)\n`;
-                    report += `- Total files handled: ${monthlyData.total_files_handled}\n`;
-                    report += `- Days with activity: ${monthlyData.days_with_activity}\n`;
-                    report += `- Avg activity per day: ${monthlyData.avg_activity_per_day}\n`;
+                // Fallback to cached summary from hydration
+                const cachedEmp = AZURE_CACHE.employees.find(e => e.user === resolvedName);
+                if (cachedEmp && cachedEmp.summary) {
+                    report += `(Limited data - blob not found, using cached summary)\n`;
+                    report += `- Total files handled: ${cachedEmp.summary.total_files_handled || 0}\n`;
+                    report += `- Days active: ${cachedEmp.summary.days_active || 0}\n`;
+                    report += `- Avg files per day: ${cachedEmp.summary.avg_files_per_day || 0}\n`;
                 } else {
                     report += `(No data found for this employee)\n`;
                 }
@@ -423,7 +492,7 @@ export const getEmployeeData = new DynamicStructuredTool({
 
 export const getTeamOverview = new DynamicStructuredTool({
     name: "get_team_overview",
-    description: "Calculates totals and averages for everyone in a specific team. Filter by start_date and end_date if asking about a specific timeframe like 'last week' or 'this month'.",
+    description: "Calculates totals, deletions, and averages for everyone in a specific team. Shows preferred clients and top principals per member. Filter by start_date and end_date if asking about a specific timeframe like 'last week' or 'this month'.",
     schema: z.object({
         team_name: z.string().describe("The name of the team (e.g. import, export)"),
         start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format (e.g. 2026-03-02)"),
@@ -435,6 +504,7 @@ export const getTeamOverview = new DynamicStructuredTool({
         if (!members) return `Team '${team_name}' not found. Available teams: ${Object.keys(AZURE_CACHE.teams).join(', ')}`;
 
         let totalFiles = 0;
+        let totalDeletions = 0;
         let activeMembers = 0;
         let foundLogsInPeriod = false;
 
@@ -450,14 +520,16 @@ export const getTeamOverview = new DynamicStructuredTool({
 
             for (const m of members) {
                 let memberTotal = 0;
+                let memberDeletions = 0;
                 let topClients = "Unknown";
+                let topPrincipals = "Unknown";
 
                 try {
                     const blob = containerClient.getBlockBlobClient(`Dashboard/cache/usersV3/${m}.json`);
                     if (await blob.exists()) {
                         const buffer = await blob.downloadToBuffer();
                         const data = JSON.parse(buffer.toString("utf8"));
-                        
+
                         if (start_date || end_date) {
                             if (data.daily_metrics) {
                                 for (const metric of data.daily_metrics) {
@@ -467,6 +539,7 @@ export const getTeamOverview = new DynamicStructuredTool({
                                     if (end_date && d > new Date(end_date)) within = false;
                                     if (within) {
                                         memberTotal += (metric.total_files_handled || 0);
+                                        memberDeletions += (metric.deleted_file_ids || []).length;
                                         foundLogsInPeriod = true;
                                     }
                                 }
@@ -474,6 +547,7 @@ export const getTeamOverview = new DynamicStructuredTool({
                         } else {
                             if (data.summary) {
                                 memberTotal = data.summary.total_files_handled || 0;
+                                memberDeletions = data.summary.total_deletions || 0;
                                 foundLogsInPeriod = true;
                             }
                         }
@@ -486,26 +560,39 @@ export const getTeamOverview = new DynamicStructuredTool({
                         } else {
                             topClients = "None";
                         }
+
+                        if (data.summary && data.summary.principal_specialization && Object.keys(data.summary.principal_specialization).length > 0) {
+                            topPrincipals = Object.entries(data.summary.principal_specialization)
+                                .sort((a, b) => b[1] - a[1])
+                                .slice(0, 3)
+                                .map(x => x[0]).join(', ');
+                        } else {
+                            topPrincipals = "None";
+                        }
                     } else {
-                        // Fallback
-                        const stats = Array.isArray(AZURE_CACHE.monthly_report)
-                            ? AZURE_CACHE.monthly_report.find(item => item.user === m)
-                            : null;
-                        if (stats) memberTotal = stats.total_files_handled || stats.total || 0;
+                        // Fallback to cached summary
+                        const cachedEmp = AZURE_CACHE.employees.find(e => e.user === m);
+                        if (cachedEmp && cachedEmp.summary) {
+                            memberTotal = cachedEmp.summary.total_files_handled || 0;
+                            memberDeletions = cachedEmp.summary.total_deletions || 0;
+                        }
                     }
                 } catch (e) {
                     // silent fallback
                 }
 
                 totalFiles += parseInt(memberTotal, 10);
+                totalDeletions += parseInt(memberDeletions, 10);
                 activeMembers++;
-                report += ` - ${m}: ${memberTotal} files | Preferred Clients: ${topClients}\n`;
+                const delStr = memberDeletions > 0 ? ` | ${memberDeletions} deleted` : '';
+                report += ` - ${m}: ${memberTotal} files${delStr} | Clients: ${topClients} | Principals: ${topPrincipals}\n`;
             }
         } catch (e) {
             report += `Error reading team member files: ${e.message}\n`;
         }
 
         report += `\nTotal Team Files: ${totalFiles}\n`;
+        if (totalDeletions > 0) report += `Total Team Deletions: ${totalDeletions}\n`;
         if (activeMembers > 0) report += `Avg Per Member: ${(totalFiles / activeMembers).toFixed(2)}\n`;
 
         if ((start_date || end_date) && !foundLogsInPeriod) {
@@ -581,22 +668,33 @@ export const autoAssignTeamsByFileTypes = new DynamicStructuredTool({
     func: async () => {
         let assigned = 0;
 
-        if (Array.isArray(AZURE_CACHE.users_summary)) {
-            for (const user of AZURE_CACHE.users_summary) {
-                if (user.user && user.daily_file_creations) {
-                    const totalSum = Object.values(user.daily_file_creations).reduce((a, b) => a + b, 0);
-                    if (totalSum > 50) {
-                        // Dummy logic: We assume high volume users might be import or default to a generic "customs"
-                        // Since file_type_counts isn't natively in this JSON structure based on api.js.
-                        if (!AZURE_CACHE.teams['import'].includes(user.user)) {
-                            AZURE_CACHE.teams['import'].push(user.user);
-                            assigned++;
-                        }
-                    }
-                }
+        for (const emp of AZURE_CACHE.employees) {
+            if (!emp.user || !emp.summary) continue;
+            const fileTypes = emp.summary.file_type_counts || {};
+            const totalFiles = emp.summary.total_files_handled || 0;
+            if (totalFiles < 50) continue;
+
+            // Determine team based on file type specialization
+            const hasImport = Object.keys(fileTypes).some(t => t.toUpperCase().includes('IMPORT'));
+            const hasExport = Object.keys(fileTypes).some(t => t.toUpperCase().includes('EXPORT'));
+
+            let targetTeam = 'customs'; // default
+            if (hasImport && !hasExport) targetTeam = 'import';
+            else if (hasExport && !hasImport) targetTeam = 'export';
+            else if (hasImport && hasExport) {
+                // Assign to whichever has more volume
+                const importCount = Object.entries(fileTypes).filter(([t]) => t.toUpperCase().includes('IMPORT')).reduce((s, [, c]) => s + c, 0);
+                const exportCount = Object.entries(fileTypes).filter(([t]) => t.toUpperCase().includes('EXPORT')).reduce((s, [, c]) => s + c, 0);
+                targetTeam = importCount >= exportCount ? 'import' : 'export';
+            }
+
+            if (!AZURE_CACHE.teams[targetTeam]) AZURE_CACHE.teams[targetTeam] = [];
+            if (!AZURE_CACHE.teams[targetTeam].includes(emp.user)) {
+                AZURE_CACHE.teams[targetTeam].push(emp.user);
+                assigned++;
             }
         }
 
-        return `Action Successful: Auto-assigned ${assigned} prominent users to operational teams.`;
+        return `Action Successful: Auto-assigned ${assigned} prominent users to operational teams based on their file type specialization.`;
     },
 });
