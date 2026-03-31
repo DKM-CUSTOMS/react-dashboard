@@ -116,13 +116,23 @@ async function fetchAllRuns(days) {
     (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
   );
 
-  // Flatten warning_count into each run
-  const enrichedRuns = allRuns.map(r => ({
-    ...r,
-    warning_count: r.warnings_summary?.warning_count || 0,
-    warnings: r.warnings_summary?.warnings || [],
-    warning_aggregations: r.warnings_summary?.aggregations || {},
-  }));
+  // Flatten warning_count, warnings, and commercial_ref into each run.
+  // Data may come from warnings_summary (older schema) or excel_validator_result (newer schema).
+  const enrichedRuns = allRuns.map(r => {
+    const excelWarnings = r.excel_validator_result?.warnings || [];
+    const summaryWarnings = r.warnings_summary?.warnings || [];
+    // prefer summary if it exists, fall back to excel_validator_result
+    const warnings = summaryWarnings.length > 0 ? summaryWarnings : excelWarnings;
+    const warning_count = r.warnings_summary?.warning_count ?? excelWarnings.length;
+    const commercial_ref = r.commercial_ref || r.excel_validator_result?.commercial_ref || null;
+    return {
+      ...r,
+      commercial_ref,
+      warning_count,
+      warnings,
+      warning_aggregations: r.warnings_summary?.aggregations || {},
+    };
+  });
 
   // Compute per-pipeline stats
   const pipelineMap = {};

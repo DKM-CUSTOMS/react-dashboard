@@ -50,6 +50,59 @@ const StatusBadge = ({ status }) => {
     );
 };
 
+/* ─── Per-pipeline health grid ─── */
+const PipelineHealthGrid = ({ pipelines, days }) => {
+    if (!pipelines || pipelines.length === 0) return null;
+    const sorted = [...pipelines].sort((a, b) => b.total - a.total);
+    return (
+        <div className="px-6 py-4 border-b border-gray-100 bg-white">
+            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" /> Pipeline Health
+                <span className="ml-1 text-gray-400 normal-case font-normal">· last {days} days</span>
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {sorted.map(p => {
+                    const total = p.total || 1;
+                    const successPct = Math.round((p.success / total) * 100);
+                    const warningPct = Math.round((p.warning / total) * 100);
+                    const failedPct = Math.round((p.failed / total) * 100);
+                    const rateColor = successPct >= 90 ? 'text-emerald-600'
+                        : successPct >= 70 ? 'text-amber-600'
+                        : 'text-red-600';
+                    const borderColor = successPct >= 90 ? 'border-emerald-100'
+                        : successPct >= 70 ? 'border-amber-100'
+                        : 'border-red-100';
+                    return (
+                        <div key={p.logic_app_name} className={`bg-gray-50 border ${borderColor} rounded-sm p-3`}>
+                            <div className="flex items-start justify-between mb-2 gap-2">
+                                <span className="text-[10px] font-bold text-indigo-700 truncate leading-tight" title={p.logic_app_name}>
+                                    {p.logic_app_name}
+                                </span>
+                                <span className={`text-sm font-bold whitespace-nowrap ${rateColor}`}>{successPct}%</span>
+                            </div>
+                            {/* Stacked bar */}
+                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+                                <div className="h-full flex">
+                                    {successPct > 0 && <div className="bg-emerald-400" style={{ width: `${successPct}%` }} />}
+                                    {warningPct > 0 && <div className="bg-amber-400" style={{ width: `${warningPct}%` }} />}
+                                    {failedPct > 0 && <div className="bg-red-400" style={{ width: `${failedPct}%` }} />}
+                                </div>
+                            </div>
+                            {/* Counts row */}
+                            <div className="flex items-center gap-2 text-[9px] font-bold">
+                                <span className="text-emerald-600">{p.success} ok</span>
+                                {p.warning > 0 && <span className="text-amber-600">{p.warning} warn</span>}
+                                {p.failed > 0 && <span className="text-red-600">{p.failed} fail</span>}
+                                <span className="text-gray-400 ml-auto font-medium">{p.total} runs</span>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 /* ─── Feature 5: Mini sparkline bar ─── */
 const MiniHealthBar = ({ pipelines }) => {
     if (!pipelines || pipelines.length === 0) return null;
@@ -429,10 +482,14 @@ const PipelineMonitoringPage = () => {
         try {
             const date = format(new Date(run.start_time), 'yyyy-MM-dd');
             const detail = await fetchRunDetails(run.logic_app_name, run.run_id, date);
+            const excelWarnings = detail.excel_validator_result?.warnings || [];
+            const summaryWarnings = detail.warnings_summary?.warnings || [];
+            const warnings = summaryWarnings.length > 0 ? summaryWarnings : excelWarnings;
             setExpandedDetail({
                 ...detail,
-                warning_count: detail.warnings_summary?.warning_count || 0,
-                warnings: detail.warnings_summary?.warnings || [],
+                commercial_ref: detail.commercial_ref || detail.excel_validator_result?.commercial_ref || null,
+                warning_count: detail.warnings_summary?.warning_count ?? excelWarnings.length,
+                warnings,
                 warning_aggregations: detail.warnings_summary?.aggregations || {},
             });
         } catch (e) {
@@ -553,6 +610,9 @@ const PipelineMonitoringPage = () => {
                             <option value={3}>Last 3 days</option>
                             <option value={7}>Last 7 days</option>
                             <option value={14}>Last 14 days</option>
+                            <option value={30}>Last 30 days</option>
+                            <option value={60}>Last 60 days</option>
+                            <option value={90}>Last 90 days</option>
                         </select>
                         {/* Refresh */}
                         <button
@@ -577,6 +637,9 @@ const PipelineMonitoringPage = () => {
                     <MetricCard label="Warnings" value={data.stats.warning.toLocaleString()} icon={AlertTriangle} theme="amber" />
                     <MetricCard label="Failed" value={data.stats.failed.toLocaleString()} sub={data.stats.failed > 0 ? 'Needs attention' : 'All clear'} icon={XCircle} theme="red" />
                 </div>
+
+                {/* ── Per-pipeline health grid ── */}
+                <PipelineHealthGrid pipelines={data.pipelines} days={days} />
 
                 {/* ── Filters bar ── */}
                 <div className="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border-b border-gray-100">

@@ -139,5 +139,26 @@
         "timestamp": "2026-03-22T12:56:36.846Z"
       }
     ]
+  },
+  {
+    "id": "99f1949c-e077-4a91-826f-113c8a2cb46d",
+    "title": "Fadwa Team Update",
+    "isIncognito": false,
+    "createdAt": "2026-03-23T12:37:28.317Z",
+    "updatedAt": "2026-03-23T12:37:45.129Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "how is fadwa team doing ?",
+        "attachments": [],
+        "timestamp": "2026-03-23T12:37:28.317Z"
+      },
+      {
+        "role": "assistant",
+        "text": "The IMPORT team, which includes Fadwa, has been performing well over the period from March 1 to March 23, 2026. Here’s a summary of their performance:\n\n### Team Overview\n- **Total Files Handled by Team**: 2071\n- **Total Deletions**: 220\n- **Average Files per Member**: 188.27\n\n### Individual Contributions\n- **FADWA.ERRAZIKI**: 126 files | 32 deleted | Clients: DKM, LOGWIN, TCI | Principals: EVCARGOANR, LOGWIN AIR, TCI CAR\n- **AYOUB.SOURISTE**: 178 files | 16 deleted | Clients: DKM, TCI, BLECKMANN | Principals: TCI CAR, BRINK, BLECKMANN\n- **AYMANE.BERRIOUA**: 142 files | 7 deleted | Clients: DKM, TCI, LEVACO | Principals: TCI CAR, LEVACO, MAINFREIGH\n- **SANA.IDRISSI**: 122 files | 28 deleted | Clients: DKM, BLECKMANN, TCI | Principals: BLECKMANN, BRINK, TCI CAR\n- **AMINA.SAISS**: 5 files | 1 deleted | Clients: TCI, DKM, LEVACO | Principals: TCI CAR, IDEAL, LEVACO\n- **KHADIJA.OUFKIR**: 203 files | 9 deleted | Clients: DKM, IDEAL, TCI | Principals: BBL FRANCE, TCI CAR, LEVACO\n- **ZOHRA.HMOUDOU**: 140 files | 33 deleted | Clients: DKM, TCI, LEVACO | Principals: IDEAL, TCI CAR, LEVACO\n- **SIMO.ONSI**: 172 files | 11 deleted | Clients: DKM_NLD, MARKEN, DKM | Principals: IMPORT4 YO, MARKEN, CORNEEL NL\n- **YOUSSEF.ASSABIR**: 643 files | 44 deleted | Clients: LM_LOGIST, DKM_NLD, DKM_VP_NL | Principals: LM LOGISTI, IMPORT4 YO, CORNEEL NL\n- **ABOULHASSAN.AMINA**: 180 files | 22 deleted | Clients: DKM, TCI, LEVACO | Principals: TCI CAR, LEVACO, HELLMAN\n- **ADRIANA.SLAVOVA**: 160 files | 17 deleted | Clients: DKM, WOLF_OIL, GDL_TRANSP | Principals: WOLF OI, GDL TRANSP, WYNN\n\nOverall, the team is performing well, with a significant number of files handled and a reasonable number of deletions. If you need more specific insights or comparisons, feel free to ask!",
+        "attachments": [],
+        "timestamp": "2026-03-23T12:37:45.129Z"
+      }
+    ]
   }
 ]
