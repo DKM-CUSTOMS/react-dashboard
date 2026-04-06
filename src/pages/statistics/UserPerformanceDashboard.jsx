@@ -1051,13 +1051,12 @@ const UserPerformanceDashboard = () => {
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Breakdown</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Modifications</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Deleted</th>
-                <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Avg Time</th>
                 <th className="px-6 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredMetrics.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-8 text-xs text-gray-400">No activity found for this period.</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-xs text-gray-400">No activity found for this period.</td></tr>
               ) : filteredMetrics.map((day) => {
                 const dateKey = day.date;
                 const isSelected = selectedRows.has(dateKey);
@@ -1086,6 +1085,7 @@ const UserPerformanceDashboard = () => {
                         <div className="flex items-center justify-center gap-2 text-[10px]">
                           <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-sm border border-blue-100">{day.manual} M</span>
                           <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-sm border border-emerald-100">{day.auto} A</span>
+                          <span className="px-1.5 py-0.5 bg-orange-50 text-orange-700 rounded-sm border border-orange-100" title="Avg Modifs/File">{day.modPerFile} Avg Mod</span>
                         </div>
                       </td>
                       <td className="px-6 py-3 text-center">
@@ -1109,7 +1109,6 @@ const UserPerformanceDashboard = () => {
                           <span className="text-xs text-gray-300">0</span>
                         )}
                       </td>
-                      <td className="px-6 py-3 text-center text-xs text-gray-500">{day.avgTime} m</td>
                       <td className="px-6 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => setModalData(day)}
@@ -1124,7 +1123,7 @@ const UserPerformanceDashboard = () => {
                     {/* Expanded Detail Row */}
                     {isExpanded && (
                       <tr className="bg-gray-50/50">
-                        <td colSpan={9} className="px-6 py-4 border-t border-gray-100 shadow-inner">
+                        <td colSpan={8} className="px-6 py-4 border-t border-gray-100 shadow-inner">
                           <div className="flex flex-col gap-3 text-xs pl-12">
                             {day.manual > 0 && (
                               <div className="flex items-start gap-2">
