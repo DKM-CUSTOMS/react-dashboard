@@ -6,7 +6,8 @@
       "Bash(xargs grep -l \"getUser\\\\|auth\\\\|login\")",
       "Bash(node --input-type=module --eval \"import\\(''./src/pages/statistics/CustomsAiChatbotPage.jsx''\\).catch\\(e => console.error\\(e.message\\)\\)\")",
       "Bash(npx --no-install vite build --mode development)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(xargs grep:*)"
     ]
   }
 }

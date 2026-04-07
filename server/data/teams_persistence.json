@@ -16,7 +16,8 @@
         "SIMO.ONSI",
         "YOUSSEF.ASSABIR",
         "ABOULHASSAN.AMINA",
-        "ADRIANA.SLAVOVA"
+        "ADNANE.MARZOUQ",
+        "AMINE.LAMIM"
       ],
       "leaders": [
         "FADWA.ERRAZIKI"
@@ -36,7 +37,8 @@
         "CHAIMAAE.EJJARI",
         "HAFIDA.BOOHADDOU",
         "KHADIJA.HICHAMI",
-        "FATIMA.ZAHRA.BOUGSIM"
+        "FATIMA.ZAHRA.BOUGSIM",
+        "ADRIANA.SLAVOVA"
       ],
       "leaders": [
         "IKRAM.OULHIANE"
@@ -141,6 +143,16 @@
     },
     {
       "usercode": "ADRIANA.SLAVOVA",
+      "role": "member",
+      "location": "Mock"
+    },
+    {
+      "usercode": "ADNANE.MARZOUQ",
+      "role": "member",
+      "location": "Mock"
+    },
+    {
+      "usercode": "AMINE.LAMIM",
       "role": "member",
       "location": "Mock"
     }

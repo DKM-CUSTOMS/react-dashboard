@@ -160,5 +160,86 @@
         "timestamp": "2026-03-23T12:37:45.129Z"
       }
     ]
+  },
+  {
+    "id": "1048e02d-e392-4e87-8e80-ef6aa2dc8759",
+    "title": "Greetings",
+    "isIncognito": false,
+    "createdAt": "2026-04-07T13:26:37.042Z",
+    "updatedAt": "2026-04-07T13:57:38.243Z",
+    "messages": [
+      {
+        "role": "user",
+        "text": "hello",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:26:37.042Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Hello! How can I assist you today?",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:26:41.158Z"
+      },
+      {
+        "role": "user",
+        "text": "gave me the teams we have",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:26:49.886Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here are the current teams in the company:\n\n### IMPORT Team\n- FADWA.ERRAZIKI\n- AYOUB.SOURISTE\n- AYMANE.BERRIOUA\n- SANA.IDRISSI\n- AMINA.SAISS\n- KHADIJA.OUFKIR\n- ZOHRA.HMOUDOU\n- SIMO.ONSI\n- YOUSSEF.ASSABIR\n- ABOULHASSAN.AMINA\n- ADRIANA.SLAVOVA\n\n### EXPORT Team\n- IKRAM.OULHIANE\n- MOURAD.ELBAHAZ\n- MOHSINE.SABIL\n- AYA.HANNI\n- ZAHIRA.OUHADDA\n- CHAIMAAE.EJJARI\n- HAFIDA.BOOHADDOU\n- KHADIJA.HICHAMI\n- FATIMA.ZAHRA.BOUGSIM\n\nIf you need more information about a specific team or its members, feel free to ask!",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:26:56.144Z"
+      },
+      {
+        "role": "user",
+        "text": "compare between these teams",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:30:11.933Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here's a comparison between the IMPORT and EXPORT teams for the period from April 1 to April 7, 2026:\n\n### IMPORT Team Overview\n- **Total Team Files:** 456\n- **Total Team Deletions:** 54\n- **Average Files per Member:** 41.45\n\n#### Members' Performance:\n- **FADWA.ERRAZIKI:** 30 files | 8 deleted\n- **AYOUB.SOURISTE:** 30 files | 4 deleted\n- **AYMANE.BERRIOUA:** 43 files | 2 deleted\n- **SANA.IDRISSI:** 38 files | 25 deleted\n- **AMINA.SAISS:** 0 files\n- **KHADIJA.OUFKIR:** 77 files | 5 deleted\n- **ZOHRA.HMOUDOU:** 29 files | 6 deleted\n- **SIMO.ONSI:** 0 files\n- **YOUSSEF.ASSABIR:** 173 files | 1 deleted\n- **ABOULHASSAN.AMINA:** 36 files | 3 deleted\n- **ADRIANA.SLAVOVA:** 0 files\n\n### EXPORT Team Overview\n- **Total Team Files:** 601\n- **Total Team Deletions:** 57\n- **Average Files per Member:** 66.78\n\n#### Members' Performance:\n- **IKRAM.OULHIANE:** 23 files | 2 deleted\n- **MOURAD.ELBAHAZ:** 90 files | 9 deleted\n- **MOHSINE.SABIL:** 72 files | 9 deleted\n- **AYA.HANNI:** 0 files\n- **ZAHIRA.OUHADDA:** 80 files | 12 deleted\n- **CHAIMAAE.EJJARI:** 137 files | 6 deleted\n- **HAFIDA.BOOHADDOU:** 54 files | 10 deleted\n- **KHADIJA.HICHAMI:** 49 files | 3 deleted\n- **FATIMA.ZAHRA.BOUGSIM:** 96 files | 6 deleted\n\n### Summary\n- The **EXPORT team** outperformed the **IMPORT team** in total files handled (601 vs. 456) and had a higher average files per member (66.78 vs. 41.45).\n- Both teams had a similar number of deletions, with the EXPORT team having slightly more (57 vs. 54).\n\nIf you need further analysis or specific details, let me know!",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:30:29.138Z"
+      },
+      {
+        "role": "user",
+        "text": "return ouput visual",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:30:48.396Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here's a visual comparison of the IMPORT and EXPORT teams based on their performance from April 1 to April 7, 2026:\n\n### Team Performance Overview\n\n```chart\n{\n  \"title\": \"Team Performance Comparison (April 1 - April 7, 2026)\",\n  \"xAxisKey\": \"team\",\n  \"bars\": [\n    { \"key\": \"total_files\", \"name\": \"Total Files\", \"color\": \"#3b82f6\" },\n    { \"key\": \"total_deletions\", \"name\": \"Total Deletions\", \"color\": \"#10b981\" },\n    { \"key\": \"avg_per_member\", \"name\": \"Avg Files per Member\", \"color\": \"#f59e0b\" }\n  ],\n  \"data\": [\n    { \"team\": \"IMPORT\", \"total_files\": 456, \"total_deletions\": 54, \"avg_per_member\": 41.45 },\n    { \"team\": \"EXPORT\", \"total_files\": 601, \"total_deletions\": 57, \"avg_per_member\": 66.78 }\n  ]\n}\n```\n\n### Summary\n- **Total Files:** The EXPORT team handled more files (601) compared to the IMPORT team (456).\n- **Total Deletions:** The EXPORT team had slightly more deletions (57) than the IMPORT team (54).\n- **Average Files per Member:** The EXPORT team had a higher average of files per member (66.78) compared to the IMPORT team (41.45).\n\nIf you need further insights or a different type of visualization, let me know!",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:31:01.418Z"
+      },
+      {
+        "role": "user",
+        "text": "i want from 01/01 to right now",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:41:20.363Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here's the performance comparison between the IMPORT and EXPORT teams from January 1, 2026, to April 7, 2026:\n\n### IMPORT Team Overview\n- **Total Team Files:** 12,681\n- **Total Team Deletions:** 1,082\n- **Average Files per Member:** 1,152.82\n\n#### Members' Performance:\n- **FADWA.ERRAZIKI:** 715 files | 150 deleted\n- **AYOUB.SOURISTE:** 879 files | 89 deleted\n- **AYMANE.BERRIOUA:** 730 files | 53 deleted\n- **SANA.IDRISSI:** 643 files | 137 deleted\n- **AMINA.SAISS:** 12 files | 5 deleted\n- **KHADIJA.OUFKIR:** 1,239 files | 68 deleted\n- **ZOHRA.HMOUDOU:** 728 files | 177 deleted\n- **SIMO.ONSI:** 1,037 files | 62 deleted\n- **YOUSSEF.ASSABIR:** 5,164 files | 179 deleted\n- **ABOULHASSAN.AMINA:** 819 files | 90 deleted\n- **ADRIANA.SLAVOVA:** 715 files | 72 deleted\n\n### EXPORT Team Overview\n- **Total Team Files:** 12,788\n- **Total Team Deletions:** 1,410\n- **Average Files per Member:** 1,420.89\n\n#### Members' Performance:\n- **IKRAM.OULHIANE:** 474 files | 107 deleted\n- **MOURAD.ELBAHAZ:** 1,512 files | 115 deleted\n- **MOHSINE.SABIL:** 1,147 files | 114 deleted\n- **AYA.HANNI:** 951 files | 215 deleted\n- **ZAHIRA.OUHADDA:** 1,510 files | 153 deleted\n- **CHAIMAAE.EJJARI:** 2,821 files | 119 deleted\n- **HAFIDA.BOOHADDOU:** 1,616 files | 286 deleted\n- **KHADIJA.HICHAMI:** 722 files | 96 deleted\n- **FATIMA.ZAHRA.BOUGSIM:** 2,035 files | 205 deleted\n\n### Summary\n- The **EXPORT team** handled slightly more files (12,788) compared to the **IMPORT team** (12,681).\n- The **EXPORT team** also had a higher average files per member (1,420.89) compared to the **IMPORT team** (1,152.82).\n- The **EXPORT team** had more deletions overall (1,410) compared to the **IMPORT team** (1,082).\n\n### Visual Representation\nHere's a visual comparison of the teams' performance:\n\n```chart\n{\n  \"title\": \"Team Performance Comparison (Jan 1 - Apr 7, 2026)\",\n  \"xAxisKey\": \"team\",\n  \"bars\": [\n    { \"key\": \"total_files\", \"name\": \"Total Files\", \"color\": \"#3b82f6\" },\n    { \"key\": \"total_deletions\", \"name\": \"Total Deletions\", \"color\": \"#10b981\" },\n    { \"key\": \"avg_per_member\", \"name\": \"Avg Files per Member\", \"color\": \"#f59e0b\" }\n  ],\n  \"data\": [\n    { \"team\": \"IMPORT\", \"total_files\": 12681, \"total_deletions\": 1082, \"avg_per_member\": 1152.82 },\n    { \"team\": \"EXPORT\", \"total_files\": 12788, \"total_deletions\": 1410, \"avg_per_member\": 1420.89 }\n  ]\n}\n```\n\nIf you need further insights or a different type of visualization, let me know!",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:41:44.769Z"
+      },
+      {
+        "role": "user",
+        "text": "gave me the data of these users since 01/01 KHADIJA OUFKIR\n\nHIND EZZAOUI\n\nHOUDA EZZAOUI\n\nMUSTAPHA BOUJALA\n\nAYMANE BERRIOUA\n\nAYOUB SOURISTE\n\nFADWA ERRAZIKI\n\nSANA IDRISSI\n\nZOHRA HMOUDOU\n\nOUMAIMA EL OUTMANI\n\nADNANE MARZOUQ\n\nABOULHASSAN AMINA\n\nas table style or an excel",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:56:35.645Z"
+      },
+      {
+        "role": "assistant",
+        "text": "Here is the performance data for the specified employees from January 1, 2026, to April 7, 2026, presented in a table format:\n\n| Employee Name          | Total Files | Manual Files | Automatic Files | Total Modifications | Avg Files/Day | Days Active | Avg Creation Time (s) | Total Deletions | Deleted Own Files | Deleted Others' Files |\n|------------------------|-------------|--------------|------------------|---------------------|----------------|-------------|-----------------------|------------------|-------------------|-----------------------|\n| KHADIJA.OUFKIR        | 1239        | 589          | 650              | 16220               | 21             | 59          | 37.293                | 68               | 68                | 0                     |\n| HIND.EZZAOUI          | 1035        | 916          | 119              | 25036               | 16.69          | 62          | 8.089                 | 91               | 78                | 13                    |\n| HOUDA.EZZAOUI         | 959         | 907          | 52               | 14713               | 17.44          | 55          | 10.725                | 53               | 46                | 7                     |\n| MUSTAPHA.BOUJALA      | 2110        | 2110         | 0                | 31459               | 32.97          | 68          | 42.97                 | 189              | 177               | 12                    |\n| AYMANE.BERRIOUA       | 730         | 729          | 1                | 13477               | 11.97          | 61          | 24.239                | 53               | 50                | 3                     |\n| AYOUB.SOURISTE        | 879         | 879          | 0                | 23566               | 13.52          | 65          | 25.277                | 89               | 89                | 0                     |\n| FADWA.ERRAZIKI        | 715         | 715          | 0                | 15000               | 12.5           | 57          | 30.5                  | 45               | 45                | 0                     |\n| SANA.IDRISSI          | 643         | 638          | 5                | 25653               | 10.54          | 61          | 27.717                | 137              | 120               | 17                    |\n| ZOHRA.HMOUDOU         | 728         | 692          | 36               | 18057               | 11.93          | 62          | 11.529                | 177              | 136               | 41                    |\n| OUMAIMA.EL.OUTMANI    | 784         | 758          | 26               | 18433               | 13.75          | 57          | 19.328                | 89               | 85                | 4                     |\n| ADNANE.MARZOUQ        | 142         | 142          | 0                | 1814                | 8.88           | 16          | 13.063                | 4                | 4                 | 0                     |\n| ABOULHASSAN.AMINA     | 819         | 819          | 0                | 16287               | 13.65          | 60          | 53.684                | 90               | 87                | 3                     |\n\nThis table summarizes the performance metrics for each employee, including total files handled, manual vs. automatic files, modifications, and deletions.\n\nIf you would like to download this data as an Excel file, please let me know!",
+        "attachments": [],
+        "timestamp": "2026-04-07T13:57:38.243Z"
+      }
+    ]
   }
 ]
