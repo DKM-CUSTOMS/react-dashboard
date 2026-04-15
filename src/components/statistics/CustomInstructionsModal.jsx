@@ -3,7 +3,7 @@ import { X, Loader2 } from 'lucide-react';
 
 
 
-export default function CustomInstructionsModal({ open, onClose, userEmail }) {
+export default function CustomInstructionsModal({ open, onClose, userEmail, onSaved }) {
     const [aboutUser, setAboutUser] = useState('');
     const [responseStyle, setResponseStyle] = useState('');
     const [loading, setLoading] = useState(false);
@@ -36,7 +36,7 @@ export default function CustomInstructionsModal({ open, onClose, userEmail }) {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await fetch('/api/ai/instructions', {
+            const res = await fetch('/api/ai/instructions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -45,6 +45,10 @@ export default function CustomInstructionsModal({ open, onClose, userEmail }) {
                     responseStyle
                 })
             });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.instructions && onSaved) {
+                onSaved(data.instructions);
+            }
             onClose();
         } catch (err) {
             console.error('Failed to save instructions:', err);
@@ -60,6 +64,9 @@ export default function CustomInstructionsModal({ open, onClose, userEmail }) {
             await fetch(`/api/ai/instructions?user=${encodeURIComponent(userEmail)}`, {
                 method: 'DELETE'
             });
+            if (onSaved) {
+                onSaved(null);
+            }
         } catch (err) {
             console.error('Failed to clear instructions:', err);
         }

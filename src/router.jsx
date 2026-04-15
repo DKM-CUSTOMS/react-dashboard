@@ -6,10 +6,6 @@ import RequestFlow from './pages/RequestFlow';
 import NotFound from './pages/NotFound';
 import CustomsDashboard from './pages/statistics/CustomsDashboard';
 import UserPerformanceDashboard from './pages/statistics/UserPerformanceDashboard';
-import UserCompareDashboard from './pages/statistics/UserCompareDashboard';
-import MultiUserCompareDashboard from './pages/statistics/MultiUserCompareDashboard';
-import UserComparisonSelector from './pages/statistics/UserComparisonSelector.jsx';
-import MonthlyReport from './pages/statistics/MonthlyReport';
 import UserManagement from './pages/statistics/UserManagement';
 import Profile from './pages/profile/Profile';
 import EmailAssistant from './pages/ai-agents/EmailAssistant';
@@ -23,6 +19,7 @@ import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
 import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
 import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
 import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
+import HrAiCapabilitiesPage from './pages/statistics/HrAiCapabilitiesPage.jsx';
 import RequireRole from './components/auth/RequireRole';
 import UserRolesPage from './pages/admin/UserRolesPage';
 
@@ -56,28 +53,16 @@ const router = createBrowserRouter([
         element: withAccess(<UserPerformanceDashboard />, ['admin', 'Team Leader']),
       },
       {
-        path: 'statistics/performance/compare',
-        element: withAccess(<UserComparisonSelector />, ['admin', 'Team Leader']),
-      },
-      {
-        path: 'statistics/performance/compare/:user1/:user2',
-        element: withAccess(<UserCompareDashboard />, ['admin', 'Team Leader']),
-      },
-      {
-        path: 'statistics/performance/compare-multi/:usernames',
-        element: withAccess(<MultiUserCompareDashboard />, ['admin', 'Team Leader']),
-      },
-      {
-        path: 'statistics/monthly-report',
-        element: withAccess(<MonthlyReport />, ['admin', 'Team Leader']),
-      },
-      {
         path: 'statistics/user-management',
         element: withAccess(<UserManagement />, ['admin', 'Administrator']),
       },
       {
         path: 'statistics/ai-chat',
-        element: withAccess(<AiChatbotPage />, ['developer']),
+        element: withAccess(<AiChatbotPage />, ['developer', 'admin']),
+      },
+      {
+        path: 'statistics/ai-guide',
+        element: withAccess(<HrAiCapabilitiesPage />, ['admin', 'manager', 'Team Leader']),
       },
       {
         path: 'statistics/customs-agent',

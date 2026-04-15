@@ -5,13 +5,22 @@ import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
 import { PythonInterpreterTool } from "@langchain/community/experimental/tools/pyinterpreter";
 
 import {
+    AZURE_CACHE,
     getEmployeeData,
     getAllEmployeesOverview,
     getTeamOverview,
+    getTeamPrincipals,
+    getTeamPrincipalCoverage,
     addUserToTeam,
     removeUserFromTeam,
     autoAssignTeamsByFileTypes,
-    getTeamsList
+    getTeamsList,
+    getMonthlyReport,
+    compareEmployees,
+    getPrincipalAssignmentPlan,
+    detectUnderperformancePatterns,
+    getWorkloadBalanceReport,
+    getCrossDeletionReport
 } from "../services/hrAiTools.js";
 import { logAiChat } from "../services/chatLogger.js";
 import { getUserChatSessions, getChatSession, appendToChat, deleteChatSession, getUserShortcuts, updateChatTitle } from "../services/chatHistoryService.js";
@@ -21,6 +30,102 @@ import { z } from 'zod';
 const router = express.Router();
 
 let executorCache = null;
+const baseHrTools = [
+    getEmployeeData,
+    getAllEmployeesOverview,
+    getTeamOverview,
+    getTeamPrincipals,
+    getTeamPrincipalCoverage,
+    getTeamsList,
+    getMonthlyReport,
+    compareEmployees,
+    getPrincipalAssignmentPlan,
+    detectUnderperformancePatterns,
+    getWorkloadBalanceReport,
+    getCrossDeletionReport,
+    addUserToTeam,
+    removeUserFromTeam,
+    autoAssignTeamsByFileTypes,
+];
+
+function getKnownTopLevelTeamNames() {
+    const teamNames = new Set();
+
+    for (const team of (AZURE_CACHE.teamsData || [])) {
+        if (!team.parent_id && team.name) {
+            teamNames.add(team.name);
+        }
+    }
+
+    for (const teamName of Object.keys(AZURE_CACHE.teams || {})) {
+        if (teamName) {
+            teamNames.add(teamName);
+        }
+    }
+
+    return [...teamNames];
+}
+
+function detectTeamNameFromMessage(message) {
+    const lower = String(message || '').toLowerCase();
+    const teamNames = getKnownTopLevelTeamNames().sort((a, b) => b.length - a.length);
+
+    for (const teamName of teamNames) {
+        const normalized = teamName.toLowerCase();
+        if (lower.includes(normalized)) {
+            return teamName;
+        }
+        if (lower.includes(`${normalized} team`)) {
+            return teamName;
+        }
+    }
+
+    return null;
+}
+
+function detectDirectToolCall(message) {
+    const text = String(message || '');
+    const lower = text.toLowerCase();
+    const teamName = detectTeamNameFromMessage(text);
+
+    const asksPrincipalCoverage =
+        /for each principal/i.test(text) ||
+        /group .* by principals?/i.test(text) ||
+        /top\s*(3|three)\s+(users|employees|handlers)/i.test(text) ||
+        /most\s*(3|three)\s+(users|employees)/i.test(text) ||
+        /who works.*principal/i.test(text);
+
+    if (asksPrincipalCoverage && teamName) {
+        return {
+            tool: "get_team_principal_coverage",
+            input: { team_name: teamName, top_n: 3 },
+        };
+    }
+
+    const asksPrincipalList =
+        /how many principals/i.test(text) ||
+        /count principals/i.test(text) ||
+        /list principals/i.test(text) ||
+        /principals across all teams/i.test(text) ||
+        /all team principals/i.test(text) ||
+        /which principals belong/i.test(text);
+
+    if (asksPrincipalList) {
+        return {
+            tool: "get_team_principals",
+            input: teamName ? { team_name: teamName } : {},
+        };
+    }
+
+    if (lower.includes("for all teams") && lower.includes("principal")) {
+        return {
+            tool: "get_team_principals",
+            input: {},
+        };
+    }
+
+    return null;
+}
 
 export async function initializeAgent() {
     if (executorCache) return executorCache;
@@ -32,16 +137,7 @@ export async function initializeAgent() {
 
     const pyodideTool = await PythonInterpreterTool.initialize();
 
-    const tools = [
-        getEmployeeData,
-        getAllEmployeesOverview,
-        getTeamOverview,
-        addUserToTeam,
-        removeUserFromTeam,
-        autoAssignTeamsByFileTypes,
-        getTeamsList,
-        pyodideTool
-    ];
+    const tools = [...baseHrTools, pyodideTool];
 
     const prompt = ChatPromptTemplate.fromMessages([
         ["system", `You are HR Intelligence AI, an expert HR and Customs Management assistant.
@@ -142,15 +238,68 @@ Returns per member: files handled, deletions, top clients, top principals.
 Supports date filtering (start_date, end_date) — sums daily_metrics for each member in the period.
 Use when: Team-level performance, comparing team members.
 
+TOOL 3B: get_team_principals
+Purpose: Returns the EXACT principal list and principal count for one team or for all teams.
+Use when: "how many principals", "list principals in Import", "all team principals", "which principals belong to Export".
+IMPORTANT: NEVER infer or invent principal names when this tool can answer the question.
+
+TOOL 3C: get_team_principal_coverage
+Purpose: For one team, returns each principal with the top users who actually worked on it, ranked by real file counts.
+Use when: "for each principal, who are the top 3 users?", "group Import by principal", "who works most on LEVACO in Import?".
+IMPORTANT: Use this instead of get_principal_assignment_plan when the user asks for actual historical top handlers rather than recommended assignments.
+
 TOOL 4: get_teams_list
 ─────────────────────────────────────────────
-Purpose: List all teams and their current members.
+Purpose: List all teams and their current members, with full hierarchy.
+Teams can have sub-teams (e.g. Import → Import Sub-A, Import Sub-B). Each sub-team may have a Senior/Leader.
+When asked "who is in the Import team?", this tool returns ALL members across Import and all its sub-teams.
+Always call this first when the user asks about team membership or team structure.
 
 TOOL 5: Team management tools
 ─────────────────────────────────────────────
 - add_user_to_team: Assign an employee to a team
 - remove_user_from_team: Remove an employee from all teams
 - auto_assign_teams_by_file_types: Auto-distribute based on file_type_counts (IMPORT/EXPORT in type name)
+
+TOOL 7: get_monthly_report
+─────────────────────────────────────────────
+Purpose: Full monthly performance report grouped by team.
+Returns per employee: total files, manual/auto split, avg per active day, modifications, deletions.
+Ranks employees within each team. Flags anyone below the 13 files/day target.
+Parameters: month (YYYY-MM, defaults to current month), team_name (optional filter).
+Use when: "monthly report", "how did the team do this month", "monthly rankings", "who had the most files in March", "month-over-month".
+
+TOOL 8: compare_employees
+─────────────────────────────────────────────
+Purpose: Side-by-side comparison of 2 or more employees (no upper limit).
+Calculates: efficiency score (0-100), consistency score, workload capacity, automation rate, modifications per file, principal distribution, capacity headroom.
+Produces ranked tables, strategic recommendations, principal assignment analysis, and a copy-paste decision list.
+Parameters: employee_names (list of 2+ names), optional start_date/end_date.
+Use when: "compare X and Y", "who is better", "head-to-head", "contrast X vs Y vs Z", "who should take this work".
+
+TOOL 9: get_principal_assignment_plan
+─────────────────────────────────────────────
+Purpose: Expert work-distribution planner. Scores each employee for each principal using exposure history, efficiency, and capacity headroom. Produces PRIMARY + BACKUP assignments for every principal with a copy-paste action list.
+Parameters: principals (optional list), team_name (optional), start_date/end_date (optional).
+Use when: "who should handle principal X?", "redistribute workload", "assign these clients to the team", "spread principals", "work distribution plan".
+
+TOOL 10: detect_underperformance_patterns
+─────────────────────────────────────────────
+Purpose: Scans all employees for: chronic below-target output, inactivity streaks, sudden output drops, high cross-deletion, spike-crash volatility. Returns severity-ranked findings (CRITICAL/HIGH/MEDIUM/LOW) with a priority action list.
+Parameters: days_back (default 30), min_active_days (default 5).
+Use when: "who is underperforming?", "weekly audit", "performance review", "who needs attention?", "any red flags?".
+
+TOOL 11: get_workload_balance_report
+─────────────────────────────────────────────
+Purpose: Shows capacity utilization per team member (visual bar), flags overloaded (>22/day) and underutilized (<10/day), and proposes specific file-count transfers with preferred principals for smooth handover.
+Parameters: team_name (required), start_date/end_date (optional).
+Use when: "is the team balanced?", "who is overloaded?", "how to rebalance?", "capacity planning", "workload distribution".
+
+TOOL 12: get_cross_deletion_report
+─────────────────────────────────────────────
+Purpose: Deletion audit — shows who deletes others' files, volumes, cross-deletion rate as % of output. Flags suspicious patterns (>10 cross-deletions, >30% of their total).
+Parameters: team_name (optional), start_date/end_date (optional).
+Use when: "who is deleting other people's work?", "deletion audit", "quality control review", "cross-deletion patterns".
 
 TOOL 6: python_repl
 ─────────────────────────────────────────────
@@ -187,11 +336,38 @@ SMART RETRIEVAL STRATEGY
    → Compare the PERIOD TOTALS from both calls.
 
 5. TEAM QUESTIONS
-   → Use get_teams_list to see what teams exist.
-   → Use get_team_overview for team aggregation with optional date filtering.
+   â†’ Use get_team_principals when the user asks to list principals, count principals, or compare principals by team.
+   â†’ NEVER invent team names or principal names. If the principal data is missing, say it is unavailable.
+   → Use get_teams_list to see what teams exist and their full hierarchy (parent teams + sub-teams + leaders).
+   → A parent team (e.g. "Import") may have sub-teams. get_teams_list and get_team_overview both include ALL members across sub-teams automatically.
+   → Use get_team_overview for team aggregation with optional date filtering — it covers all sub-team members too.
 
-6. COMPARING 2-3 EMPLOYEES IN DEPTH
-   → Call get_employee_data for each person individually.
+TEAM PRINCIPAL RULES:
+- For any request to list principals, count principals, or show principals by team, call get_team_principals.
+- For any request asking for the top users per principal or to group a team by principal, call get_team_principal_coverage.
+- Do not invent principal names, placeholder names, or extra teams.
+- If principal data is missing for a team, say that the data is unavailable instead of filling gaps.
+
+6. COMPARING 2-6 EMPLOYEES
+   → Use compare_employees — it returns a side-by-side table, efficiency/consistency scores, capacity analysis, and strategic recommendations in one call.
+   → Do NOT manually call get_employee_data multiple times for a comparison — use compare_employees instead.
+   → For period-specific comparisons ("compare X and Y last week") pass start_date and end_date.
+
+7. MONTHLY REPORT
+   → Use get_monthly_report — returns team-grouped rankings for any calendar month.
+   → Default is the current month. Pass month="YYYY-MM" for a specific month.
+   → For "month-over-month" comparisons, call get_monthly_report twice with different month values.
+
+8. WORK DISTRIBUTION / PRINCIPAL ASSIGNMENT
+   → Use get_principal_assignment_plan — outputs PRIMARY + BACKUP per principal with copy-paste action list.
+   → For capacity context first, pair with get_workload_balance_report.
+
+9. PERFORMANCE AUDIT / RED FLAGS
+   → Use detect_underperformance_patterns — scans all employees, severity-ranked.
+   → Use get_cross_deletion_report for deletion-specific audits.
+
+10. WORKLOAD REBALANCING
+    → Use get_workload_balance_report for team-level capacity analysis and rebalance suggestions.
 
 IMPORTANT: Be efficient. Use get_all_employees_overview for broad questions. Only call get_employee_data when you need deep detail on a specific person or a custom date range.
 
@@ -281,7 +457,16 @@ EXECUTION RULES
 5. To assign/move employees to teams, use add_user_to_team. To remove, use remove_user_from_team.
 6. For complex analytics (standard deviations, correlations), use the python_repl tool.
 7. Always base answers on ACTUAL data from the tools.
-8. DATA CITATIONS: When quoting a specific number, cite the source: \`[1245](cite:get_all_employees_overview)\` or \`[203](cite:get_employee_data)\`.
+8. For team/principal questions, NEVER fabricate missing principals, placeholder names, or extra team names. If the tool output is incomplete, say the data is unavailable.
+9. DATA CITATIONS: When quoting a specific number, cite the source: \`[1245](cite:get_all_employees_overview)\` or \`[203](cite:get_employee_data)\`.
+10. DECISION LOG: After every work-distribution, assignment, or rebalancing response, append a concise "DECISION LOG" section at the end with copy-paste-ready action lines. Format:
+   ---
+   **Decision Log — [Date]**
+   - Assign [PRINCIPAL] → [EMPLOYEE] (primary) / [EMPLOYEE] (backup)
+   - Transfer ~[N] files/day from [A] to [B] for [PRINCIPAL]
+   - Schedule 1:1 with [EMPLOYEE] — [reason]
+   Keep it actionable and short. One line per action.
+11. GENERATIVE UI: Always render key metrics as \`\`\`dashboard blocks and comparisons as \`\`\`chart blocks. Never give raw numbers without a visual when a chart would be clearer.
 
 ═══════════════════════════════════════════════
 SECURITY AND SCOPE GUARDRAILS
@@ -335,12 +520,41 @@ router.post("/ask", async (req, res) => {
             appendToChat(user_name, activeChatId, 'user', message, isIncognito);
         }
 
-        const executor = await initializeAgent();
-
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
+
+        const directToolCall = detectDirectToolCall(message);
+        if (directToolCall) {
+            const start = Date.now();
+            const tool = baseHrTools.find(t => t.name === directToolCall.tool);
+            if (!tool) {
+                throw new Error(`Direct tool '${directToolCall.tool}' is not available.`);
+            }
+
+            res.write(`data: ${JSON.stringify({ clear: true })}\n\n`);
+            res.write(`data: ${JSON.stringify({ status: "Using exact data shortcut..." })}\n\n`);
+
+            const result = await tool.invoke(directToolCall.input);
+            const finalOutput = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+
+            res.write(`data: ${JSON.stringify({ token: finalOutput })}\n\n`);
+
+            if (user_name) {
+                appendToChat(user_name, activeChatId, 'assistant', finalOutput, isIncognito);
+            }
+
+            setImmediate(() => {
+                logAiChat(user_name, message, finalOutput, Date.now() - start);
+            });
+
+            res.write(`data: ${JSON.stringify({ done: true, finalOutput, chatId: activeChatId })}\n\n`);
+            res.end();
+            return;
+        }
+
+        const executor = await initializeAgent();
 
         const start = Date.now();
         const eventStream = await executor.streamEvents({
@@ -365,9 +579,28 @@ router.post("/ask", async (req, res) => {
                     }
                 }
             } else if (event.event === "on_tool_start") {
-                res.write(`data: ${JSON.stringify({ status: `Calling tool ${event.name}...` })}\n\n`);
+                const statusMap = {
+                    get_employee_data: "Fetching employee profile...",
+                    get_all_employees_overview: "Loading all employee summaries...",
+                    get_team_overview: "Analyzing team performance...",
+                    get_team_principals: "Collecting exact team principals...",
+                    get_team_principal_coverage: "Ranking top users by principal...",
+                    get_teams_list: "Reading team structure...",
+                    get_monthly_report: "Building monthly report...",
+                    compare_employees: "Computing comparison analytics...",
+                    get_principal_assignment_plan: "Scoring principal assignments...",
+                    detect_underperformance_patterns: "Scanning for underperformance patterns...",
+                    get_workload_balance_report: "Analyzing team workload capacity...",
+                    get_cross_deletion_report: "Auditing deletion patterns...",
+                    add_user_to_team: "Updating team assignment...",
+                    remove_user_from_team: "Removing team assignment...",
+                    auto_assign_teams_by_file_types: "Running auto-assignment algorithm...",
+                    python_repl: "Running data calculation..."
+                };
+                const status = statusMap[event.name] || `Processing ${event.name}...`;
+                res.write(`data: ${JSON.stringify({ status })}\n\n`);
             } else if (event.event === "on_tool_end") {
-                res.write(`data: ${JSON.stringify({ status: `Tool connected, analyzing...` })}\n\n`);
+                res.write(`data: ${JSON.stringify({ status: "Analyzing results..." })}\n\n`);
             }
         }
 
@@ -418,6 +651,46 @@ router.post("/ask", async (req, res) => {
             res.write(`data: ${JSON.stringify({ error: "Agent encountered an error.", details: e.message })}\n\n`);
             res.end();
         }
+    }
+});
+
+router.get("/debug/tools", (req, res) => {
+    res.json({
+        success: true,
+        tools: baseHrTools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+        })),
+    });
+});
+
+router.post("/debug/tool", async (req, res) => {
+    try {
+        const { tool: toolName, input } = req.body || {};
+        if (!toolName) {
+            return res.status(400).json({ error: "Tool name is required" });
+        }
+
+        const tool = baseHrTools.find(t => t.name === toolName);
+        if (!tool) {
+            return res.status(404).json({
+                error: `Unknown tool '${toolName}'`,
+                available_tools: baseHrTools.map(t => t.name),
+            });
+        }
+
+        const result = await tool.invoke(input || {});
+        res.json({
+            success: true,
+            tool: toolName,
+            input: input || {},
+            output: result,
+        });
+    } catch (e) {
+        res.status(500).json({
+            success: false,
+            error: e.message,
+        });
     }
 });
 // ==== Chat History UI Routes ====

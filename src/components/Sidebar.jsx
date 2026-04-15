@@ -105,10 +105,9 @@ const Sidebar = ({ collapsed, toggle }) => {
       allowedRoles: ['admin', 'manager', 'Team Leader'],
       subtitles: [
         { label: 'Performance', path: '/statistics/performance' },
-        { label: 'Compare', path: '/statistics/performance/compare' },
-        { label: 'Monthly Report', path: '/statistics/monthly-report' },
         { label: 'User Management', path: '/statistics/user-management' },
         { label: 'HR Intelligence AI', path: '/statistics/ai-chat' },
+        { label: 'AI Guide', path: '/statistics/ai-guide' },
       ],
       hasSubmenu: true,
     },

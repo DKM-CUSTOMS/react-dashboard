@@ -889,6 +889,8 @@ export default function AiChatbotPage() {
             <CustomInstructionsModal
                 open={showInstructions}
                 onClose={() => setShowInstructions(false)}
+                userEmail={userEmail}
+                onSaved={setCachedInstructions}
             />
         </div >
     );
