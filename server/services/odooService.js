@@ -282,8 +282,45 @@ export const createOdooTicket = async (declaration) => {
                         </table>
                     </div>
 
-                    <!-- Parsed Manifest Data (The structured part of odoo_body) -->
-                    <div style="margin-bottom: 24px;">
+                    <!-- Principal & Commercial Reference -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                        <div style="background-color: #f8f4f7; border: 1px solid #e8dde5; border-left: 4px solid #714B67; border-radius: 4px; padding: 14px 16px;">
+                            <span style="font-size: 10px; color: #714B67; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Principal</span>
+                            <span style="font-size: 15px; font-weight: 700; color: #2c3e50;">${declaration.principal || 'N/A'}</span>
+                        </div>
+                        <div style="background-color: #f5f6fa; border: 1px solid #dcdde1; border-left: 4px solid #7f8c8d; border-radius: 4px; padding: 14px 16px;">
+                            <span style="font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Commercial Reference</span>
+                            <span style="font-size: 15px; font-weight: 700; color: #2c3e50; font-family: 'Courier New', monospace;">${declaration.commercial_reference || 'N/A'}</span>
+                        </div>
+                    </div>
+
+                    ${(declaration.straat_en_nummer || declaration.stad || declaration.importer_code || declaration.plda_operatoridentity) ? `
+                    <!-- Address & Location -->
+                    <div style="margin-bottom: 20px; background-color: #f9fafb; border: 1px solid #e0e0e0; border-radius: 4px; padding: 16px;">
+                        <h4 style="margin: 0 0 12px 0; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: 700; border-left: 3px solid #27ae60; padding-left: 8px;">Address & Location</h4>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            ${declaration.straat_en_nummer || declaration.stad ? `
+                            <tr style="border-bottom: 1px solid #f0f0f0;">
+                                <td style="padding: 7px 0; width: 150px; font-weight: 600; color: #7f8c8d; font-size: 12px;">Address</td>
+                                <td style="padding: 7px 0; color: #2c3e50; font-weight: 500;">
+                                    ${[declaration.straat_en_nummer, declaration.postcode, declaration.stad, declaration.landcode].filter(Boolean).join(', ') || 'N/A'}
+                                </td>
+                            </tr>` : ''}
+                            ${declaration.importer_code ? `
+                            <tr style="border-bottom: 1px solid #f0f0f0;">
+                                <td style="padding: 7px 0; font-weight: 600; color: #7f8c8d; font-size: 12px;">Importer Code</td>
+                                <td style="padding: 7px 0; color: #2c3e50; font-weight: 500;">${declaration.importer_code}</td>
+                            </tr>` : ''}
+                            ${declaration.plda_operatoridentity ? `
+                            <tr>
+                                <td style="padding: 7px 0; font-weight: 600; color: #7f8c8d; font-size: 12px;">VAT Number</td>
+                                <td style="padding: 7px 0; font-family: 'Courier New', monospace; color: #2c3e50; font-weight: 600;">${[declaration.plda_operatoridentitycountry, declaration.plda_operatoridentity].filter(Boolean).join('')}</td>
+                            </tr>` : ''}
+                        </table>
+                    </div>` : ''}
+
+                    <!-- Extracted Manifest Data -->
+                    <div style="margin-bottom: 20px;">
                         <h4 style="margin: 0 0 12px 0; font-size: 12px; color: #7f8c8d; text-transform: uppercase; border-left: 3px solid #3498db; padding-left: 10px; font-weight: 700;">Extracted Manifest Data</h4>
                         <table style="width: 100%; border-collapse: collapse; background-color: #fcfcfc; border: 1px solid #f1f2f6; border-radius: 4px;">
                             ${manifestFields.map(f => `
@@ -295,22 +332,19 @@ export const createOdooTicket = async (declaration) => {
                         </table>
                     </div>
 
-                    <!-- System Traceability -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-top: 15px; border-top: 1px dashed #dcdde1; opacity: 0.8;">
-                        <div>
-                            <span style="font-size: 10px; color: #95a5a6; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 4px;">Principal</span>
-                            <span style="font-size: 12px; font-weight: 500;">${declaration.principal || 'N/A'}</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 10px; color: #95a5a6; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 4px;">Commercial Reference</span>
-                            <span style="font-size: 12px; font-weight: 500;">${declaration.commercial_reference || 'N/A'}</span>
-                        </div>
+                    <!-- Containers -->
+                    <div style="background-color: #f8f9ff; border: 1px solid #e8eaf6; padding: 12px 16px; border-radius: 4px;">
+                        <span style="font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Containers</span>
+                        ${declaration.containers_list
+                            ? `<div style="font-size: 13px; font-family: 'Courier New', monospace; color: #2c3e50; font-weight: 600;">${declaration.containers_list}</div>`
+                            : `<div style="font-size: 12px; color: #b2bec3; font-style: italic;">No containers</div>`
+                        }
                     </div>
 
                     <!-- Raw Link String Reference -->
                     <div style="margin-top: 20px; background-color: #f5f6fa; padding: 10px; border-radius: 4px;">
                         <span style="font-size: 9px; color: #7f8c8d; text-transform: uppercase; display: block; margin-bottom: 4px;">Technical Link Reference</span>
-                        <div style="font-size: 9px; font-family: monospace; color: #95a5a6; word-break: break-all;">${declaration.odoo_linkstring || 'NO_LINK_STRING'}</div>
+                        <div style="font-size: 9px; font-family: monospace; color: #95a5a6; word-break: break-all;">${declaration.odoo_linkstring_streamsoftware || declaration.odoo_linkstring || 'NO_LINK_STRING'}</div>
                     </div>
                 </div>
 
@@ -322,7 +356,7 @@ export const createOdooTicket = async (declaration) => {
         `;
 
         // Create a structured and clean ticket subject
-        const ticketSubject = `[#${declaration.declaration_id}] | ${declaration.commercial_reference || 'NOREF'} | ${declaration.principal || 'NO_PRINCIPAL'}`.toUpperCase();
+        const ticketSubject = `${declaration.declaration_id} - Reference : ${declaration.commercial_reference || 'NOREF'} - ${declaration.importer_code || 'NO_IMPORTER'} - ${declaration.mrn || 'NO_MRN'}`;
 
         const svc = getHelpdeskService();
         const ticketId = await svc.createTicket({

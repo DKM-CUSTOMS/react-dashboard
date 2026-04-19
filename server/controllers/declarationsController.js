@@ -1,5 +1,8 @@
 
 import { getDbConnection } from '../config/db.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const mockDeclarations = require('../data/mock-declarations.json');
 
 // Allowed sort columns (whitelist to prevent SQL injection)
 const ALLOWED_SORT_COLUMNS = {
@@ -12,6 +15,9 @@ const ALLOWED_SORT_COLUMNS = {
   'odoo_status': 'odoo_status',
   'first_seen_at': 'first_seen_at',
   'last_seen_at': 'last_seen_at',
+  'stad': 'stad',
+  'landcode': 'landcode',
+  'containers_list': 'containers_list',
 };
 
 // GET /api/declarations
@@ -19,50 +25,6 @@ export const getDeclarations = async (req, res) => {
   // MOCK MODE for Local Development
   if (process.env.USE_MOCK_DB === 'true') {
     console.log('Serving Mock Data for Declarations');
-    const mockData = [
-      {
-        "declaration_id": 154438,
-        "declaration_guid": "57419AC664EB465EFEAB08DE2D0324B4",
-        "mail_subject": "154438Reference : S01BE00000610/CI - APFELKONI - 25BEH10000018LIDR4",
-        "odoo_linkstring": "+++++CUSTOMS/IDMS-AES EXPORT/57419AC664EB465EFEAB08DE2D0324B4/[LGYO7QB28SII69FO]+++++ (Please do not remove this line)",
-        "odoo_body": "Destination: DE - Link5: DE-13587 BERLIN TURKUAZ GMBH - ImportercountryDE - Importer: APFELKONIGIN GMBH - FiscalRepresentedAPFELKONI - FiscalConsigneeTURKUAZ GM",
-        "commercial_reference": "S01BE00000610/CI",
-        "principal": "IDEAL",
-        "importer_code": "APFELKONI",
-        "mrn": "25BEH10000018LIDR4",
-        "traces_identification": null,
-        "linkiderp2": null,
-        "linkiderp4": null,
-        "date_of_acceptance": "2025-11-27T00:00:00.000Z",
-        "first_seen_at": "2026-02-17T16:40:57.000Z",
-        "last_seen_at": "2026-02-18T11:13:16.000Z",
-        "odoo_status": "NEW",
-        "odoo_project_id": null,
-        "odoo_error": null,
-        "odoo_updated_at": null
-      },
-      {
-        "declaration_id": 154439,
-        "declaration_guid": "MOCK_GUID_2",
-        "mail_subject": "MOCK SUBJECT 2",
-        "odoo_linkstring": "MOCK LINKSTRING",
-        "odoo_body": "MOCK BODY",
-        "commercial_reference": "MOCK/REF/2",
-        "principal": "TEST_PRINCIPAL",
-        "importer_code": "TEST_IMPORTER",
-        "mrn": "MOCK_MRN_2",
-        "traces_identification": null,
-        "linkiderp2": null,
-        "linkiderp4": null,
-        "date_of_acceptance": "2025-12-01T00:00:00.000Z",
-        "first_seen_at": "2026-02-18T10:00:00.000Z",
-        "last_seen_at": "2026-02-18T12:00:00.000Z",
-        "odoo_status": "CREATED",
-        "odoo_project_id": "PROJECT_123",
-        "odoo_error": null,
-        "odoo_updated_at": "2026-02-18T12:00:00.000Z"
-      }
-    ];
 
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 50;
@@ -71,7 +33,7 @@ export const getDeclarations = async (req, res) => {
     const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
 
     // Mock filtering
-    let filtered = mockData.filter(item => {
+    let filtered = mockDeclarations.filter(item => {
       if (req.query.status && item.odoo_status !== req.query.status) return false;
       if (req.query.principal && !item.principal.includes(req.query.principal)) return false;
       if (req.query.importer && !item.importer_code.includes(req.query.importer)) return false;
@@ -84,6 +46,11 @@ export const getDeclarations = async (req, res) => {
           item.mrn || '',
           item.commercial_reference || '',
           item.mail_subject || '',
+          item.stad || '',
+          item.postcode || '',
+          item.landcode || '',
+          item.plda_operatoridentity || '',
+          item.containers_list || '',
         ].map(f => f.toLowerCase());
         if (!searchFields.some(f => f.includes(search))) return false;
       }
@@ -152,9 +119,14 @@ export const getDeclarations = async (req, res) => {
         OR mrn LIKE ?
         OR commercial_reference LIKE ?
         OR mail_subject LIKE ?
+        OR stad LIKE ?
+        OR postcode LIKE ?
+        OR landcode LIKE ?
+        OR plda_operatoridentity LIKE ?
+        OR containers_list LIKE ?
       )`;
       const searchTerm = `%${search.trim()}%`;
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
     connection = await getDbConnection();
@@ -191,15 +163,18 @@ export const getDeclarations = async (req, res) => {
 };
 
 // GET /api/declarations/stats
-export const getDeclarationStats = async (req, res) => {
+export const getDeclarationStats = async (_req, res) => {
   if (process.env.USE_MOCK_DB === 'true') {
-    return res.json({
-      unsynced: 1,
-      failed: 0,
-      created: 1,
-      today: 2,
-      total: 2
-    });
+    const total = mockDeclarations.length;
+    const unsynced = mockDeclarations.filter(d => d.odoo_status === 'NEW').length;
+    const failed = mockDeclarations.filter(d => d.odoo_status === 'FAILED').length;
+    const created = mockDeclarations.filter(d => d.odoo_status === 'CREATED').length;
+    const today = mockDeclarations.filter(d => {
+      const d2 = new Date(d.date_of_acceptance);
+      const now = new Date();
+      return d2.toDateString() === now.toDateString();
+    }).length;
+    return res.json({ unsynced, failed, created, today, total });
   }
 
   let connection;
@@ -259,43 +234,8 @@ export const createProject = async (req, res) => {
   if (process.env.USE_MOCK_DB === 'true') {
     console.log(`[Mock Mode] Using logic: Mock Database Data -> Real Odoo API Call`);
 
-    // 1. Construct Mock Declaration Object from the mockData array or provided ID
-    const mockData = [
-      {
-        "declaration_id": 154438,
-        "declaration_guid": "57419AC664EB465EFEAB08DE2D0324B4",
-        "mail_subject": "154438Reference : S01BE00000610/CI - APFELKONI - 25BEH10000018LIDR4",
-        "odoo_linkstring": "+++++CUSTOMS/IDMS-AES EXPORT/57419AC664EB465EFEAB08DE2D0324B4/[LGYO7QB28SII69FO]+++++ (Please do not remove this line)",
-        "odoo_body": "Destination: DE - Link5: DE-13587 BERLIN TURKUAZ GMBH - ImportercountryDE - Importer: APFELKONIGIN GMBH - FiscalRepresentedAPFELKONI - FiscalConsigneeTURKUAZ GM",
-        "commercial_reference": "S01BE00000610/CI",
-        "principal": "IDEAL",
-        "importer_code": "APFELKONI",
-        "mrn": "25BEH10000018LIDR4",
-        "traces_identification": null,
-        "linkiderp2": null,
-        "linkiderp4": null,
-        "date_of_acceptance": "2025-11-27T00:00:00.000Z",
-        "odoo_status": "NEW"
-      },
-      {
-        "declaration_id": 154439,
-        "declaration_guid": "MOCK_GUID_2",
-        "mail_subject": "MOCK SUBJECT 2",
-        "odoo_linkstring": "MOCK LINKSTRING",
-        "odoo_body": "MOCK BODY",
-        "commercial_reference": "MOCK/REF/2",
-        "principal": "TEST_PRINCIPAL",
-        "importer_code": "TEST_IMPORTER",
-        "mrn": "MOCK_MRN_2",
-        "traces_identification": null,
-        "linkiderp2": null,
-        "linkiderp4": null,
-        "date_of_acceptance": "2025-12-01T00:00:00.000Z",
-        "odoo_status": "CREATED"
-      }
-    ];
-
-    let mockDeclaration = mockData.find(d => d.declaration_id == id);
+    // 1. Construct Mock Declaration Object from the shared mockDeclarations array
+    let mockDeclaration = mockDeclarations.find(d => d.declaration_id == id);
 
     if (!mockDeclaration) {
       // Fallback if ID doesn't match mock records
@@ -313,17 +253,20 @@ export const createProject = async (req, res) => {
       };
     }
 
-    try {
-      // 2. Call REAL Odoo Service
-      const ticketId = await createOdooTicket(mockDeclaration);
-      console.log(`[Success] Odoo Ticket Created via Mock Mode! ID: ${ticketId}`);
+    const odooReady = process.env.ODOO_URL && process.env.ODOO_DB && process.env.ODOO_USERNAME && process.env.ODOO_API_KEY;
 
-      // Return success with REAL ticket ID
-      return res.json({
-        success: true,
-        odoo_project_id: ticketId,
-        status: 'CREATED'
-      });
+    if (!odooReady) {
+      // Simulate a successful ticket creation when Odoo creds are not set locally
+      const fakeTicketId = `MOCK-${Date.now()}`;
+      console.log(`[Mock Mode] Odoo credentials not configured — simulating ticket creation. Fake ID: ${fakeTicketId}`);
+      return res.json({ success: true, odoo_project_id: fakeTicketId, status: 'CREATED' });
+    }
+
+    try {
+      // 2. Call REAL Odoo Service (creds are present)
+      const ticketId = await createOdooTicket(mockDeclaration);
+      console.log(`[Mock Mode] Real Odoo Ticket Created! ID: ${ticketId}`);
+      return res.json({ success: true, odoo_project_id: ticketId, status: 'CREATED' });
 
     } catch (odooErr) {
       console.error("ODOO ERROR (Mock Mode):", odooErr);

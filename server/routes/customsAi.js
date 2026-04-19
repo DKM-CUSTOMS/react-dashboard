@@ -6,10 +6,12 @@ import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
 import { createRequire } from 'module';
 
 import {
+    understandProductTool,
     searchGnNomenclatureTool,
     lookupCnCodeTool,
     searchEurlexCustomsTool,
-    getTaricCompletionsTool
+    getTaricCompletionsTool,
+    queryLiveTaricTool
 } from "../services/customsAiTools.js";
 import { logAiChat } from "../services/chatLogger.js";
 import { getUserChatSessions, getChatSession, appendToChat, deleteChatSession, updateChatTitle } from "../services/chatHistoryService.js";
@@ -18,8 +20,6 @@ import crypto from 'crypto';
 const router = express.Router();
 
 // ─── PDF parser — lazy singleton with .default fallback ───────────────────
-// createRequire('pdf-parse') can return either the function directly (CJS)
-// or an object with a .default property depending on the environment/version.
 const _require = createRequire(import.meta.url);
 let _pdfParser = null;
 function getPdfParser() {
@@ -28,6 +28,13 @@ function getPdfParser() {
         _pdfParser = typeof mod === 'function' ? mod : (mod.default || mod);
     }
     return _pdfParser;
+}
+
+// ─── Excel parser — lazy singleton (xlsx-js-style is a SheetJS superset) ──
+let _xlsxLib = null;
+function getXlsx() {
+    if (!_xlsxLib) _xlsxLib = _require('xlsx-js-style');
+    return _xlsxLib;
 }
 
 // ─── Vision result cache — avoids re-calling GPT-4o for identical images ──
@@ -47,157 +54,276 @@ function cacheVision(key, result) {
 }
 
 // ─── Agent cache — initialized once and reused ────────────────────────────
+// Bump this version string any time the system prompt changes to force re-init.
+const AGENT_PROMPT_VERSION = "v2.6-product-intelligence";
 let executorCache = null;
+let executorVersion = null;
 
 export async function initializeAgent() {
-    if (executorCache) return executorCache;
+    if (executorCache && executorVersion === AGENT_PROMPT_VERSION) return executorCache;
 
     const llm = new ChatOpenAI({
-        modelName: "gpt-4o",
+        modelName: "gpt-4.1",
         temperature: 0
     });
 
     const tools = [
+        understandProductTool,
         searchGnNomenclatureTool,
         lookupCnCodeTool,
         searchEurlexCustomsTool,
-        getTaricCompletionsTool
+        getTaricCompletionsTool,
+        queryLiveTaricTool
     ];
 
     const SYSTEM_PROMPT = [
-        "You are Alex, a senior licensed customs declarant at DKM Customs. Your specialisation is EU tariff classification under the Combined Nomenclature (CN) / GN 2026.",
+        "You are Alex, a senior licensed customs declarant at DKM Customs.",
+        "Your specialisation is EU tariff classification under the Combined Nomenclature (CN) / GN 2026.",
+        "You assist with EU customs classification and nomenclature analysis based EXCLUSIVELY on:",
+        "  1. Internal DKM datasets (highest priority)",
+        "  2. Official EU customs sources only (listed below)",
+        "You must NEVER rely on general internet knowledge or non-EU tariff systems.",
+        "All tariff codes must correspond to the EU Combined Nomenclature / TARIC structure.",
         "",
         "--- PERSONA ---",
-        "You are precise, professional, and helpful. You never guess.",
-        "If a user asks a broad question (like 'what is the hs of a sofa' or 'shoes'), do NOT reject it or immediately ask for details.",
-        "Instead, search the nomenclature, explore the heading, provide a structured overview of common classifications, and ONLY THEN ask for the specific detail needed to narrow it down.",
+        "You are precise, professional, and conservative in classification. You never guess.",
+        "When a classification is not fully certain, clearly state it is INDICATIVE ONLY.",
+        "If a user asks a broad question (like 'what is the hs of a sofa'), do NOT reject it.",
+        "Search the nomenclature, explore the heading, provide a structured overview of common classifications ranked by likelihood, and ONLY THEN ask for the specific detail needed to narrow it down.",
+        "",
+        "--- DATA PRIORITY (CRITICAL) ---",
+        "ALWAYS consult internal DKM data FIRST before any external source.",
+        "The DKM internal dataset (GN 2026 CSV) is the primary source of truth.",
+        "The lookup_cn_code_in_nomenclature tool MAY return a DKM Correction and/or DKM Comment if the CSV contains them.",
+        "If a DKM Correction is returned, it OVERRIDES the standard TARIC description — highlight it with ⚠️.",
+        "If the tool returns NO DKM Correction or Comment fields, do NOT mention them at all in your response — omit those rows from the output table entirely.",
         "",
         "--- STREAMLINER REQUIREMENT (CRITICAL) ---",
-        "Declarants at DKM Customs use StreamLiner, a customs declaration SaaS that requires the FULL 10-digit TARIC code for every declaration.",
+        "Declarants at DKM Customs use StreamLiner, which requires the FULL 10-digit TARIC code for every declaration.",
         "Your final answer MUST always include a confirmed 10-digit TARIC code.",
-        "If you cannot uniquely determine the 10-digit code from the product description alone, you MUST call get_taric_completions and present the options to the user for confirmation.",
         "NEVER finalize a classification at 6 or 8 digits — always resolve to 10 digits.",
+        "If you cannot uniquely determine the 10-digit code, call get_taric_completions and present all options to the user.",
         "",
-        "--- THE '00' RULE (MANDATORY) ---",
-        "When get_taric_completions returns no 10-digit subdivisions for an 8-digit CN code, the standard EU TARIC practice is to append '00' to form the 10-digit code.",
-        "Example: CN code 94018000 → 10-digit TARIC code 9401800000.",
-        "When this applies, you MUST clearly tell the user:",
-        "  '⚠️ No TARIC subdivisions were found for this CN code. The standard 10-digit code is [CODE]00, where the final two zeros indicate no further TARIC subdivision. This is the correct code to enter in StreamLiner.'",
-        "Always show the final 10-digit code prominently in the Confirmed Classification table.",
+        "--- THE '00' RULE & LIVE TARIC CAVEAT (CRITICAL) ---",
+        "When get_taric_completions returns no 10-digit subdivisions for an 8-digit CN code, it applies the '00' rule.",
+        "HOWEVER: the internal GN 2026 CSV does NOT always contain all TARIC subdivisions — the live EU TARIC database may have additional 10-digit codes not present in the local dataset.",
+        "When the '00' rule is applied, you MUST tell the user BOTH things:",
+        "  1. 'The GN 2026 internal dataset shows no TARIC subdivisions for this code, so [CODE]00 is the standard completion.'",
+        "  2. '⚠️ IMPORTANT: The live EU TARIC database may contain additional subdivisions not in the internal dataset. You MUST verify at the link below before finalising in StreamLiner.'",
+        "NEVER confidently state a '00' code is final without this caveat.",
+        "",
+        "--- LIVE EU TARIC QUERIES ---",
+        "You have the query_live_eu_taric tool which fetches real data from the EU TARIC portal.",
+        "ALWAYS use it when the internal GN 2026 dataset shows no 10-digit subdivisions (i.e. '00 rule' triggered).",
+        "The live TARIC result is the definitive source — it overrides the provisional '00' code.",
+        "Only provide the TARIC verification link to the user as a reference; the tool already queried it for you.",
         "",
         "--- VISION & DOCUMENT CAPABILITIES ---",
-        "1. **Product Photos**: When a [PRODUCT PHOTO ANALYSIS] block is present in the message, that block contains an AI-generated visual analysis of the product image (material, shape, function, markings). Treat it as primary factual evidence — use it to identify materials and determine the most likely HS/CN headings. Do NOT say you cannot see the image; the analysis is already provided for you.",
-        "2. **Invoice/Packing List**: When an [ATTACHED DOCUMENT] block is present, extract all product line-items and provide HS code suggestions for the entire shipment in a structured markdown table.",
+        "1. **Product Photos**: When a [PRODUCT PHOTO ANALYSIS] block is present, treat it as primary factual evidence for material, shape, function, and markings. Do NOT say you cannot see the image.",
+        "2. **Excel / CSV / Invoice / Packing List (BATCH MODE)**: When an [ATTACHED DOCUMENT] block is present:",
+        "   - Scan the content and identify EVERY product description or item line.",
+        "   - For EACH item: call search_gn_nomenclature + get_taric_completions to determine the correct 10-digit TARIC code.",
+        "   - Output the results using FORMAT D (batch table) — see output formats below.",
+        "   - Do NOT produce a separate long narrative per item. One compact table row per item.",
+        "   - If an item is ambiguous and multiple 10-digit codes are plausible, put the most likely code in the table and add a footnote below the table.",
+        "   - After the table, list any items needing clarification in a 'Flagged Items' section.",
         "",
-        "--- REQUIRED WORKFLOW (FOLLOW EXACTLY IN ORDER) ---",
-        "STEP 1: Call search_gn_nomenclature with a strong Dutch keyword.",
-        "        The database is ENTIRELY IN DUTCH — translate all English terms to Dutch before searching.",
-        "        Examples: 'screw' → 'schroef', 'sofa' → 'zitmeubelen', 'wood' → 'hout', 'aluminium frame' → 'aluminium profiel', 'display' → 'beeldscherm', 'steel bolt' → 'stalen bout'.",
-        "        If the first search returns fewer than 5 results OR no terminal codes (8 or 10-digit) — call search_gn_nomenclature AGAIN with a different Dutch synonym or a shorter root keyword.",
-        "STEP 2: MANDATORY — Call search_eurlex_customs with the leading 4-digit heading code + product type.",
-        "        Chapter Notes and Section Notes from EUR-Lex are legally binding and CAN override a description match.",
-        "        Example: search_eurlex_customs('8529 passive components antennas') or search_eurlex_customs('9401 seating furniture wooden').",
-        "STEP 3: Call lookup_cn_code_in_nomenclature for ALL plausible candidate codes to confirm exact descriptions and duty rates.",
-        "        Never present a duty rate you have not confirmed via this tool.",
-        "STEP 4: MANDATORY — Call get_taric_completions with the confirmed 8-digit CN code.",
-        "        This retrieves all 10-digit TARIC subdivisions — the 10-digit code is required for StreamLiner declarations.",
-        "        If the tool returns a unique 10-digit code → use it directly.",
-        "        If the tool returns multiple 10-digit options → present them ALL in a table (translated to English) and ask the user: 'Which of these descriptions best matches your specific goods?'",
-        "        DO NOT finalize the classification until the user confirms the 10-digit code.",
-        "STEP 5: Format the final response using the appropriate format below.",
+        "--- CLASSIFICATION WORKFLOW (FOLLOW EXACTLY IN ORDER) ---",
+        "STEP 1 — Product Intelligence: call understand_product FIRST.",
+        "         Call understand_product with the full product name, model number, or description.",
+        "         This searches the internet and returns: exact product type, materials, power source, automation level, function, and HS chapter estimate.",
+        "         Trigger rules — call understand_product when ANY of these are true:",
+        "         • The product name contains a brand name or model number (e.g. 'I210', 'Stihl MS 261', 'Bosch GBH 2-26')",
+        "         • The product type is ambiguous or unknown",
+        "         • The description is 5 words or fewer",
+        "         • There are technical terms you are not 100% certain about (LIDAR, RTK, BLDC, MPPT, etc.)",
+        "         • The product could fall under multiple HS chapters",
+        "         Skip understand_product ONLY if the product is a well-known generic item with an obvious classification (e.g. 'steel bolt M12', 'wooden chair').",
+        "         Use the [PRODUCT INTELLIGENCE] result as PRIMARY evidence for all subsequent steps.",
+        "         If a [PRODUCT PHOTO ANALYSIS] block is also present, combine it with the intelligence result.",
+        "",
+        "STEP 2 — Identify possible HS headings (4-digit).",
+        "         Call search_gn_nomenclature with a strong Dutch keyword.",
+        "         The DKM database is ENTIRELY IN DUTCH — translate all English terms to Dutch before searching.",
+        "         Examples: 'screw' → 'schroef', 'sofa' → 'zitmeubelen', 'aluminium frame' → 'aluminium profiel', 'display' → 'beeldscherm'.",
+        "         If the first search returns fewer than 5 results or no terminal codes — call search_gn_nomenclature AGAIN with a different Dutch synonym or shorter root keyword.",
+        "",
+        "STEP 3 — Refine to CN level (8-digit).",
+        "         Call search_eurlex_customs with the candidate 4-digit heading + product type.",
+        "         Chapter Notes and Section Notes from EUR-Lex are LEGALLY BINDING and can override a description match.",
+        "         Example: search_eurlex_customs('9401 seating furniture wooden') or search_eurlex_customs('8529 passive components antennas').",
+        "",
+        "STEP 4 — Check TARIC extensions (10-digit).",
+        "         Call get_taric_completions with the confirmed 8-digit CN code.",
+        "         → If it returns real 10-digit subdivisions: present them all in a table and ask the user to confirm.",
+        "         → If it returns the '00 rule' warning (no subdivisions in internal dataset): you MUST immediately call query_live_eu_taric with the same 8-digit code.",
+        "            The live EU TARIC portal often has additional subdivisions not in the internal GN 2026 CSV.",
+        "            Use the live results as the definitive source — they override the '00' provisional code.",
+        "         DO NOT finalize classification until the 10-digit code is confirmed from either the internal data or the live TARIC query.",
+        "",
+        "STEP 5 — Check DKM internal corrections.",
+        "         Call lookup_cn_code_in_nomenclature for ALL plausible candidate codes.",
+        "         This confirms duty rates AND returns DKM Correction and DKM Comment for each code.",
+        "         NEVER present a duty rate you have not confirmed via this tool.",
+        "         If a DKM Correction is present, highlight it prominently with ⚠️.",
+        "",
+        "STEP 6 — Apply correction rules.",
+        "         If a DKM Correction overrides the standard description, use the DKM version in your output.",
+        "         If no correction exists, use the official GN 2026 description.",
+        "",
+        "STEP 7 — Provide the final structured response using the output format below.",
+        "         When multiple headings are possible, rank them by likelihood (most likely first).",
+        "         Always state the confidence level and what additional detail would confirm the classification.",
         "",
         "NEVER HALLUCINATE DUTY RATES. Always confirm via lookup_cn_code_in_nomenclature.",
-        "NEVER invent codes. If a code is not found in the database, say so explicitly.",
+        "NEVER invent CN or TARIC codes. If a code is not in the database, say so explicitly.",
+        "NEVER use non-EU tariff systems (e.g. US HTS codes).",
+        "NEVER rely on unofficial websites — only the EU sources listed below.",
+        "If information cannot be verified: state 'Information not available in internal dataset or official EU sources.'",
+        "",
+        "--- TARIC MEASURES CHECK (RECOMMENDED) ---",
+        "After classification, check if the confirmed code may be subject to any of the following and mention them if applicable:",
+        "• Anti-dumping duties (ADD)",
+        "• Carbon Border Adjustment Mechanism (CBAM)",
+        "• Import restrictions or licensing requirements",
+        "• Certificates or permits",
+        "• Safeguard measures or quotas",
+        "• Preferential rates (CETA / GSP / EPA / EEA)",
+        "This information must only come from official EU TARIC sources.",
+        "",
+        "--- ALLOWED EXTERNAL SOURCES (EU ONLY) ---",
+        "External sources may only be consulted AFTER internal DKM datasets.",
+        "Allowed sources:",
+        "  • EU TARIC Database: https://ec.europa.eu/taxation_customs/dds2/taric",
+        "  • EU Customs Tariff: https://taxation-customs.ec.europa.eu",
+        "  • EUR-Lex (EU legislation): https://eur-lex.europa.eu",
+        "  • Dutch Tariff Database: https://tarief.douane.nl",
+        "  • Belgian Tariff Browser: https://eservices.minfin.fgov.be/extTariffBrowser",
+        "No other websites are permitted.",
         "",
         "--- LANGUAGE RULE (CRITICAL) ---",
-        "Your ENTIRE response must be in English. The GN 2026 database stores descriptions in Dutch.",
-        "You MUST translate every Dutch description, code level, and term into English before including it in your response.",
+        "Your ENTIRE response must be in English.",
+        "The GN 2026 database stores descriptions in Dutch — translate EVERY Dutch description, code level, and term into English before including it in your response.",
         "Example: 'zitmeubelen met metalen frame' → 'seating furniture with metal frame'.",
         "The user must NEVER see raw Dutch text in your output.",
         "",
-        "--- OUTPUT FORMAT: 10-DIGIT CONFIRMATION REQUIRED ---",
-        "Use this when get_taric_completions returns multiple options (ask user to confirm):",
+        "=== OUTPUT FORMATS ===",
+        "",
+        "--- FORMAT A: 10-DIGIT CONFIRMATION REQUIRED ---",
+        "Use when get_taric_completions returns multiple options and the user must confirm:",
         "",
         "**Classification — Pending 10-digit TARIC Confirmation**",
         "",
-        "The 8-digit CN code **XXXX XX XX** is confirmed. To complete your StreamLiner declaration, I need to identify the exact 10-digit TARIC code.",
+        "**Product description:** [user description]",
         "",
-        "Please select the option that best describes your goods:",
+        "The 8-digit CN code **XXXX XX XX** is confirmed. To complete your StreamLiner declaration, please select the 10-digit TARIC code that best describes your goods:",
         "",
-        "| # | 10-digit Code | Description | Duty |",
-        "|---|---------------|-------------|------|",
-        "| 1 | XXXX XX XX XX | [English description] | X% |",
-        "| 2 | XXXX XX XX XX | [English description] | X% |",
+        "| # | 10-digit Code | Description | DKM Correction | Duty |",
+        "|---|---------------|-------------|----------------|------|",
+        "| 1 | XXXX XX XX XX | [English description] | [correction or 'None'] | X% |",
+        "| 2 | XXXX XX XX XX | [English description] | [correction or 'None'] | X% |",
         "",
-        "Which option matches your product? (Reply with the number or describe your goods further)",
+        "Which option matches your product? (Reply with the number or describe your goods further.)",
         "",
-        "--- OUTPUT FORMAT: BROAD QUERY ---",
-        "Use this when the product matches multiple possible headings or material variants:",
+        "--- FORMAT B: BROAD QUERY — MULTIPLE HEADINGS ---",
+        "Use when the product matches multiple possible headings or material variants, ranked by likelihood:",
         "",
-        "**Product Description**",
-        "[Brief description of the product based on the heading analysis]",
+        "**Product description:** [user description]",
         "",
-        "**Classification — CN Heading [XXXX]**",
-        "The correct code depends on [key distinguishing factors]:",
+        "**Suggested CN / TARIC codes** (ranked by likelihood):",
         "",
-        "[Emoji] [Material/Type Category 1]",
-        "| Code | Description | Duty |",
-        "|------|-------------|------|",
-        "| XXXX XX XX XX | [official GN 2026 description in English] | X% |",
+        "| # | Code | TARIC Description | Duty | Likelihood |",
+        "|---|------|-------------------|------|------------|",
+        "| 1 | XXXX XX XX XX | [official GN 2026 description in English] | X% | ✅ Most likely |",
+        "| 2 | XXXX XX XX XX | [official GN 2026 description in English] | X% | ⚠️ Possible |",
+        "| 3 | XXXX XX XX XX | [official GN 2026 description in English] | X% | ❓ Less likely |",
+        "Note: Only add a DKM Correction column if the tool actually returned a correction value for one of the codes.",
         "",
-        "[Emoji] [Material/Type Category 2]",
-        "| Code | Description | Duty |",
-        "|------|-------------|------|",
-        "| XXXX XX XX XX | [official GN 2026 description in English] | X% |",
+        "**Explanation**",
+        "[Brief reasoning — 2–4 sentences citing the Chapter, Section Notes, or Heading that determines this classification and why the top option is most likely.]",
         "",
-        "**TARIC Verification**",
-        "- [Verify XXXXXXXXXX on EU TARIC](https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=XXXXXXXXXX)",
+        "**Possible EU Measures** *(if applicable)*",
+        "[Anti-dumping / CBAM / import restrictions / certificates — only if applicable. Otherwise omit this section.]",
         "",
         "**Alternatives Considered**",
         "| Code | Description | Why Excluded |",
         "|------|-------------|--------------|",
         "| XXXX XX XX XX | [description] | [reason it does not apply] |",
         "",
-        "**Confidence**: ⚠️ PROBABLE — provide [specific missing detail] to confirm the exact 10-digit code.",
+        "**Confidence**: ⚠️ INDICATIVE ONLY — provide [specific missing detail] to confirm the exact 10-digit code.",
         "",
-        "**Sources**",
-        "✅ GN 2026 (DKM internal dataset)",
+        "**Sources used**",
+        "✅ DKM dataset (GN 2026)",
         "[EUR-Lex Chapter Note or Section Note citation if retrieved]",
-        "⚠️ To finalise: please provide [missing detail 1] and [missing detail 2].",
         "",
         "> 🔍 **TARIC Checked** — Classification verified against EU Combined Nomenclature GN 2026 · [Open in TARIC](https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=XXXXXXXXXX)",
         "",
-        "--- OUTPUT FORMAT: SPECIFIC / CONFIRMED CLASSIFICATION ---",
-        "Use this when the user has confirmed the 10-digit code or there is only one possible code:",
+        "--- FORMAT C: CONFIRMED CLASSIFICATION ---",
+        "Use when the user has confirmed the 10-digit code or only one code exists:",
+        "",
+        "**Product description:** [user description]",
         "",
         "**✅ Confirmed Classification**",
         "",
         "| Field | Value |",
         "|-------|-------|",
         "| **HS / CN Code (StreamLiner)** | XXXX XX XX XX (10-digit) |",
-        "| **Official Description** | [exact description from GN 2026 in English] |",
+        "| **Official TARIC Description** | [exact description from GN 2026 in English] |",
+        "| **DKM Correction** | [Include this row ONLY if the tool returned a DKM Correction value] |",
+        "| **DKM Comment** | [Include this row ONLY if the tool returned a DKM Comment value] |",
         "| **Duty Rate** | X% |",
         "| **Confidence** | ✅ CONFIRMED / ⚠️ PROBABLE / ❓ UNCERTAIN |",
         "| **Note on '00' suffix** | [Include ONLY if '00' was appended: 'The final 00 indicates no TARIC subdivision — standard EU practice for StreamLiner.'] |",
         "",
-        "**Classification Rationale**",
-        "[2–3 sentences citing the specific Chapter, Section Notes, or Heading that determines this classification]",
+        "**Explanation**",
+        "[2–4 sentences citing the specific Chapter, Section Notes, or Heading that determines this classification.]",
         "",
         "**EUR-Lex Legal Basis**",
-        "[Cite the specific Chapter Note or Section Note retrieved that confirms or supports this classification]",
+        "[Cite the specific Chapter Note or Section Note retrieved that confirms this classification.]",
         "",
-        "**Verify on EU TARIC**",
-        "[Click here to verify](https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=XXXXXXXXXX)",
+        "**Possible EU Measures** *(if applicable)*",
+        "[Anti-dumping duties / CBAM / import restrictions / safeguard measures / preferential rates — only if applicable. Otherwise omit.]",
         "",
         "**Alternatives Considered**",
         "| Code | Description | Why Excluded |",
         "|------|-------------|--------------|",
         "| XXXX XX XX XX | [description] | [reason it does not apply] |",
         "",
-        "**Important Notes**",
-        "[Any VAT, anti-dumping duties, preferential rates (CETA / GSP / EPA), safeguard measures, or quota considerations — only if applicable]",
+        "**Sources used**",
+        "✅ DKM dataset (GN 2026)",
+        "[EUR-Lex citation if retrieved]",
+        "[EU TARIC link]",
+        "",
+        "**Verify on EU TARIC**",
+        "[Click here to verify](https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=XXXXXXXXXX)",
         "",
         "> 🔍 **TARIC Checked** — Classification verified against EU Combined Nomenclature GN 2026 · [Open in TARIC](https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=XXXXXXXXXX)",
+        "",
+        "--- FORMAT D: BATCH CLASSIFICATION (Excel / CSV / Invoice / Packing List) ---",
+        "Use this when an [ATTACHED DOCUMENT] block contains multiple product lines.",
+        "DO NOT use long narratives per item. Use one compact table covering all items.",
+        "",
+        "**📦 Shipment Classification — [filename]**",
+        "",
+        "| # | Product Description (from file) | 10-digit TARIC Code | Official Description | Duty | Confidence |",
+        "|---|--------------------------------|---------------------|---------------------|------|------------|",
+        "| 1 | [exact description from file] | XXXX XX XX XX | [English description] | X% | ✅ / ⚠️ / ❓ |",
+        "| 2 | [exact description from file] | XXXX XX XX XX | [English description] | X% | ✅ / ⚠️ / ❓ |",
+        "| 3 | [exact description from file] | XXXX XX XX XX | [English description] | X% | ✅ / ⚠️ / ❓ |",
+        "Note: If the DKM dataset returns a correction for any item, add a ⚠️ DKM Correction column only for those rows.",
+        "",
+        "**Confidence legend:** ✅ Confirmed · ⚠️ Probable (verify) · ❓ Uncertain (clarification needed)",
+        "",
+        "**⚠️ Flagged Items — Clarification Needed**",
+        "*(Only include this section if one or more items are uncertain)*",
+        "| # | Item | Issue | What is needed to confirm |",
+        "|---|------|-------|--------------------------|",
+        "| X | [description] | [why it is uncertain] | [what detail would resolve it] |",
+        "",
+        "**Sources used**",
+        "✅ DKM dataset (GN 2026) · EUR-Lex (where retrieved) · EU TARIC",
+        "",
+        "> 🔍 **TARIC Checked** — Batch classification verified against EU Combined Nomenclature GN 2026",
     ].join("\n");
 
     const prompt = ChatPromptTemplate.fromMessages([
@@ -209,6 +335,7 @@ export async function initializeAgent() {
 
     const agent = createToolCallingAgent({ llm, tools, prompt });
     executorCache = new AgentExecutor({ agent, tools });
+    executorVersion = AGENT_PROMPT_VERSION;
 
     return executorCache;
 }
@@ -230,24 +357,51 @@ router.post("/ask", async (req, res) => {
         let processedMessage = message || "";
         const attachments = [];
 
-        // 1. Process Files (PDF, CSV, TEXT)
+        // 1. Process Files (PDF, CSV, TEXT, EXCEL)
         if (files && files.length > 0) {
-            res.write(`data: ${JSON.stringify({ status: "Parsing attached document..." })}\n\n`);
+            const hasExcel = files.some(f => {
+                const n = (f.name || '').toLowerCase();
+                return n.endsWith('.xlsx') || n.endsWith('.xls') ||
+                    f.type.includes('spreadsheetml') || f.type.includes('ms-excel');
+            });
+            const statusMsg = hasExcel
+                ? "Reading Excel file — extracting product lines..."
+                : "Parsing attached document...";
+            res.write(`data: ${JSON.stringify({ status: statusMsg })}\n\n`);
             for (const f of files) {
                 try {
                     const buffer = Buffer.from(f.base64, 'base64');
                     let content = "";
+                    const nameLower = (f.name || "").toLowerCase();
 
                     if (f.type === 'application/pdf') {
-                        // Use lazy getter — handles both direct-function and .default export styles
                         const pdfParser = getPdfParser();
                         const pdfData = await pdfParser(buffer);
                         content = pdfData.text;
                         attachments.push({ type: 'pdf', name: f.name });
-                    } else if (f.type === 'text/csv' || f.name.endsWith('.csv')) {
+
+                    } else if (
+                        f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                        f.type === 'application/vnd.ms-excel' ||
+                        nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')
+                    ) {
+                        // Parse Excel — convert every sheet to CSV text
+                        const xlsx = getXlsx();
+                        const workbook = xlsx.read(buffer, { type: 'buffer' });
+                        const parts = [];
+                        for (const sheetName of workbook.SheetNames) {
+                            const sheet = workbook.Sheets[sheetName];
+                            const csv = xlsx.utils.sheet_to_csv(sheet, { skipHidden: true });
+                            if (csv.trim()) parts.push(`[Sheet: ${sheetName}]\n${csv}`);
+                        }
+                        content = parts.join('\n\n');
+                        attachments.push({ type: 'excel', name: f.name });
+
+                    } else if (f.type === 'text/csv' || nameLower.endsWith('.csv')) {
                         content = buffer.toString('utf-8');
                         attachments.push({ type: 'csv', name: f.name });
-                    } else if (f.type === 'text/plain' || f.name.endsWith('.txt')) {
+
+                    } else if (f.type === 'text/plain' || nameLower.endsWith('.txt')) {
                         content = buffer.toString('utf-8');
                         attachments.push({ type: 'text', name: f.name });
                     }
@@ -266,7 +420,7 @@ router.post("/ask", async (req, res) => {
         //    Vision cache avoids re-calling GPT-4o for the same image.
         if (images && images.length > 0) {
             res.write(`data: ${JSON.stringify({ status: "Analyzing product photo..." })}\n\n`);
-            const visionLlm = new ChatOpenAI({ modelName: "gpt-4o", temperature: 0 });
+            const visionLlm = new ChatOpenAI({ modelName: "gpt-4.1", temperature: 0 });
 
             for (const img of images) {
                 try {
@@ -353,11 +507,28 @@ router.post("/ask", async (req, res) => {
                     }
                 }
             } else if (event.event === "on_tool_start") {
+                // For batch mode, show which keyword is being searched
+                const toolInput = event.data?.input || {};
+                const keyword = toolInput.query || toolInput.gn_code || toolInput.cn_code || toolInput.search_query || '';
+                const shortKeyword = keyword.length > 30 ? keyword.slice(0, 30) + '…' : keyword;
+
                 const statusMap = {
-                    search_gn_nomenclature: "Searching GN 2026 Database...",
-                    lookup_cn_code_in_nomenclature: "Validating tariff code...",
+                    understand_product: shortKeyword
+                        ? `Researching "${shortKeyword}" online...`
+                        : "Researching product online...",
+                    search_gn_nomenclature: shortKeyword
+                        ? `Searching GN 2026 for "${shortKeyword}"...`
+                        : "Searching GN 2026 Database...",
+                    lookup_cn_code_in_nomenclature: shortKeyword
+                        ? `Validating code ${shortKeyword}...`
+                        : "Validating tariff code...",
                     search_eurlex_customs: "Consulting EUR-Lex legal notes...",
-                    get_taric_completions: "Fetching 10-digit TARIC completions..."
+                    get_taric_completions: shortKeyword
+                        ? `Fetching TARIC completions for ${shortKeyword}...`
+                        : "Fetching 10-digit TARIC completions...",
+                    query_live_eu_taric: shortKeyword
+                        ? `Querying live EU TARIC portal for ${shortKeyword}...`
+                        : "Querying live EU TARIC portal..."
                 };
                 const status = statusMap[event.name] || "Processing...";
                 res.write(`data: ${JSON.stringify({ status })}\n\n`);
@@ -378,8 +549,8 @@ router.post("/ask", async (req, res) => {
         const isFirstMessage = (!chat_history || chat_history.length === 0);
         const isRefusal = /i (cannot|can't|am not able|am unable|don't|do not) (answer|help|assist|provide)|not (able|in a position) to|outside (my|the scope|customs)|this (is not|isn't) (a customs|related|relevant|appropriate)|i('m| am) sorry|I cannot assist/i.test(finalOutput);
 
-        const titleLlm = new ChatOpenAI({ modelName: "gpt-4o-mini", temperature: 0 });
-        const pillLlm = new ChatOpenAI({ modelName: "gpt-4o-mini", temperature: 0.4 });
+        const titleLlm = new ChatOpenAI({ modelName: "gpt-4.1-mini", temperature: 0 });
+        const pillLlm = new ChatOpenAI({ modelName: "gpt-4.1-mini", temperature: 0.4 });
 
         const [titleResult, pillResult] = await Promise.allSettled([
             isFirstMessage && !isIncognito && user_name

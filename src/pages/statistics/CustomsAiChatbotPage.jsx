@@ -6,7 +6,10 @@ import remarkGfm from 'remark-gfm';
 import { useAuth } from '../../context/AuthContext';
 
 const loadingStatuses = [
-    "Consulting EUR-Lex...", "Searching GN 2026 Database...", "Validating Tariff Code...", "Analyzing product photo...", "Parsing attached document...", "Drafting response..."
+    "Researching product online...", "Consulting EUR-Lex...", "Searching GN 2026 Database...",
+    "Validating Tariff Code...", "Analyzing product photo...", "Reading Excel file...",
+    "Classifying shipment items...", "Fetching TARIC completions...",
+    "Querying live EU TARIC portal...", "Drafting response..."
 ];
 
 export default function CustomsAiChatbotPage() {
@@ -32,6 +35,7 @@ export default function CustomsAiChatbotPage() {
     const [editingText, setEditingText] = useState('');
     const [messageFeedback, setMessageFeedback] = useState({});
     const [showScrollBtn, setShowScrollBtn] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
@@ -208,19 +212,38 @@ export default function CustomsAiChatbotPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    // Accepted file types helper
+    const isAcceptedFile = (file) => {
+        if (!file) return false;
+        const name = (file.name || '').toLowerCase();
+        return (
+            file.type.startsWith('image/') ||
+            file.type === 'application/pdf' ||
+            file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            file.type === 'application/vnd.ms-excel' ||
+            file.type === 'text/csv' ||
+            file.type === 'text/plain' ||
+            name.endsWith('.xlsx') || name.endsWith('.xls') ||
+            name.endsWith('.csv') || name.endsWith('.txt') ||
+            name.endsWith('.pdf')
+        );
+    };
+
+    // Ctrl+V paste — catches images, PDFs, Excel, CSV pasted from clipboard or file manager
     const handlePaste = async (e) => {
         const items = e.clipboardData?.items;
         if (!items) return;
 
         const filesToProcess = [];
         for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
+            if (items[i].kind === 'file') {
                 const file = items[i].getAsFile();
-                if (file) filesToProcess.push(file);
+                if (file && isAcceptedFile(file)) filesToProcess.push(file);
             }
         }
 
         if (filesToProcess.length > 0) {
+            e.preventDefault();
             setIsUploading(true);
             const newAttachments = [...attachments];
             for (const file of filesToProcess) {
@@ -229,6 +252,33 @@ export default function CustomsAiChatbotPage() {
             setAttachments(newAttachments);
             setIsUploading(false);
         }
+    };
+
+    // Drag-and-drop handlers — supports dropping files anywhere on the input area
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        // Only clear if leaving the drop zone entirely (not a child element)
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setIsDragging(false);
+        }
+    };
+
+    const handleDrop = async (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const droppedFiles = Array.from(e.dataTransfer.files).filter(isAcceptedFile);
+        if (droppedFiles.length === 0) return;
+        setIsUploading(true);
+        const newAttachments = [...attachments];
+        for (const file of droppedFiles) {
+            newAttachments.push(await processFile(file));
+        }
+        setAttachments(newAttachments);
+        setIsUploading(false);
     };
 
     const removeAttachment = (index) => {
@@ -327,7 +377,7 @@ export default function CustomsAiChatbotPage() {
                     isIncognito,
                     chat_history,
                     images: currentAttachments.filter(a => a.type.startsWith('image/')),
-                    files: currentAttachments.filter(a => a.type === 'application/pdf')
+                    files: currentAttachments.filter(a => !a.type.startsWith('image/'))
                 })
             });
 
@@ -547,9 +597,39 @@ export default function CustomsAiChatbotPage() {
         { label: 'Confirm smartphone code', prompt: 'Can you confirm the HS code for a generic 5G smartphone?' }
     ];
 
+    const fileIcon = (file) => {
+        const name = (file.name || '').toLowerCase();
+        if (file.type.startsWith('image/')) return null; // handled separately
+        if (file.type === 'application/pdf' || name.endsWith('.pdf'))
+            return <div className="p-1.5 bg-red-50 text-red-500 rounded"><FileText size={16} /></div>;
+        if (name.endsWith('.xlsx') || name.endsWith('.xls') ||
+            file.type.includes('spreadsheetml') || file.type.includes('ms-excel'))
+            return <div className="p-1.5 bg-green-50 text-green-600 rounded"><FileText size={16} /></div>;
+        if (name.endsWith('.csv') || file.type === 'text/csv')
+            return <div className="p-1.5 bg-orange-50 text-orange-500 rounded"><FileText size={16} /></div>;
+        return <div className="p-1.5 bg-blue-50 text-blue-600 rounded"><FileText size={16} /></div>;
+    };
+
     const renderInputBox = (placeholder = 'Describe a product or enter an HS/CN code...') => (
         <div className="w-full max-w-[48rem] mx-auto">
-            <div className={`border rounded-2xl overflow-hidden transition-colors ${isIncognito ? 'border-[#c8c8c8] bg-[#e2e2e2] focus-within:border-[#999] focus-within:ring-2 focus-within:ring-[#666]/10' : 'border-[#d9d9d9] bg-white focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10'}`}>
+            <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border rounded-2xl overflow-hidden transition-colors ${
+                    isDragging
+                        ? 'border-primary border-dashed bg-primary/5 ring-2 ring-primary/20'
+                        : isIncognito
+                            ? 'border-[#c8c8c8] bg-[#e2e2e2] focus-within:border-[#999] focus-within:ring-2 focus-within:ring-[#666]/10'
+                            : 'border-[#d9d9d9] bg-white focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10'
+                }`}
+            >
+                {isDragging && (
+                    <div className="flex items-center justify-center gap-2 py-3 text-[13px] font-medium text-primary/70 border-b border-primary/20 bg-primary/5">
+                        <Paperclip size={14} />
+                        Drop files here — images, PDF, Excel, CSV
+                    </div>
+                )}
                 {attachments.length > 0 && (
                     <div className={`flex flex-wrap gap-2 p-3 border-b ${isIncognito ? 'border-[#cacaca] bg-[#dcdcdc]' : 'border-gray-100 bg-gray-50/30'}`}>
                         {attachments.map((file, idx) => (
@@ -558,12 +638,16 @@ export default function CustomsAiChatbotPage() {
                                     <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden">
                                         <img src={file.url} alt="" className="w-full h-full object-cover" />
                                     </div>
-                                ) : (
-                                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded">
-                                        <FileText size={16} />
-                                    </div>
-                                )}
-                                <span className="text-[12px] font-medium text-gray-700 truncate max-w-[120px]">{file.name}</span>
+                                ) : fileIcon(file)}
+                                <div className="min-w-0">
+                                    <span className="block text-[12px] font-medium text-gray-700 truncate max-w-[120px]">{file.name}</span>
+                                    <span className="block text-[10px] text-gray-400 uppercase tracking-tight">
+                                        {file.type.startsWith('image/') ? 'Photo' :
+                                            (file.name || '').toLowerCase().endsWith('.pdf') || file.type === 'application/pdf' ? 'PDF' :
+                                            (file.name || '').toLowerCase().match(/\.xlsx?$/) ? 'Excel' :
+                                            (file.name || '').toLowerCase().endsWith('.csv') ? 'CSV' : 'File'}
+                                    </span>
+                                </div>
                                 <button
                                     onClick={() => removeAttachment(idx)}
                                     className="absolute right-1 top-1 text-gray-400 hover:text-red-500 transition-colors"
@@ -582,7 +666,7 @@ export default function CustomsAiChatbotPage() {
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                     }}
                     onPaste={handlePaste}
-                    placeholder={placeholder}
+                    placeholder={isDragging ? '' : placeholder}
                     className={`w-full bg-transparent min-h-[44px] max-h-[200px] text-[15px] resize-none px-4 pt-3 pb-1 focus:outline-none ${isIncognito ? 'placeholder:text-[#aaa] text-[#1a1a1a]' : 'placeholder:text-[#999] text-[#2d2d2d]'}`}
                     disabled={isLoading}
                     rows={1}
@@ -593,7 +677,7 @@ export default function CustomsAiChatbotPage() {
                     className="hidden"
                     onChange={handleFileChange}
                     multiple
-                    accept="image/*,application/pdf,text/csv,text/plain"
+                    accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-excel,.xls,text/csv,.csv,text/plain,.txt"
                 />
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
                     <div className="flex items-center gap-1">
@@ -601,7 +685,7 @@ export default function CustomsAiChatbotPage() {
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isLoading || isUploading}
                             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isIncognito ? 'text-[#666] hover:bg-[#d4d4d4] hover:text-[#333]' : 'text-[#7a7a7a] hover:bg-[#f2f2f2]'}`}
-                            title="Attach product photo or invoice/packing list"
+                            title="Attach image, PDF, Excel or CSV — or drag &amp; drop / Ctrl+V"
                         >
                             {isUploading ? <Loader2 size={18} className="animate-spin text-primary" /> : <Paperclip size={18} />}
                         </button>

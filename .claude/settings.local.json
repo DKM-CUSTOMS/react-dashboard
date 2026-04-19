@@ -7,7 +7,12 @@
       "Bash(node --input-type=module --eval \"import\\(''./src/pages/statistics/CustomsAiChatbotPage.jsx''\\).catch\\(e => console.error\\(e.message\\)\\)\")",
       "Bash(npx --no-install vite build --mode development)",
       "Bash(npm run build)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"LOGIC_APP\\\\|VITE_AZURE\\\\|ODOO\" \"/c/Users/Ultrapc/Desktop/Dkm-workspace/react-dashboard\" --include=\"*.js\" --include=\"*.env*\" ! -path \"*/node_modules/*\" ! -path \"*/.git/*\")",
+      "Bash(grep -r \"LOGIC_APP\\\\|AZURE_STORAGE\\\\|ODOO\" \"/c/Users/Ultrapc/Desktop/Dkm-workspace/react-dashboard\" --include=\"*.js\" ! -path \"*/node_modules/*\" ! -path \"*/.git/*\")",
+      "Bash(node -e \"const x = require\\('xlsx-js-style'\\); console.log\\(typeof x.read\\)\")",
+      "Bash(npx tsc:*)",
+      "Bash(node -e ':*)"
     ]
   }
 }

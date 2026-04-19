@@ -2,6 +2,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Pinecone } from '@pinecone-database/pinecone';
 import { OpenAIEmbeddings } from '@langchain/openai';
+import OpenAI from 'openai';
 import Papa from 'papaparse';
 import { BlobServiceClient } from '@azure/storage-blob';
 
@@ -73,7 +74,10 @@ export async function initializeNomenclatureDB() {
                         gn_code: (row.gn_code || "").trim(),
                         douanerecht: (row.douanerecht || "").trim(),
                         omschrijving: (row.omschrijving || ""),
-                        code_niveau: (row.code_niveau || "")
+                        code_niveau: (row.code_niveau || ""),
+                        // DKM internal correction and comment (Column C/D) — optional fields
+                        dkm_correction: (row.dkm_correction || row.correctie || row.correction || "").trim(),
+                        dkm_comment: (row.dkm_comment || row.opmerking || row.comment || row.commentaar || "").trim()
                     }));
                     console.log(`✅ Nomenclature DB loaded! Total rows: ${cachedGnDf.length}`);
                     resolve();
@@ -88,6 +92,72 @@ export async function initializeNomenclatureDB() {
         return [];
     }
 }
+
+// ─── Tool 0: Product Intelligence (web search + vision) ───────────────────
+// Uses gpt-4o-search-preview to research the product on the live internet.
+// Returns material composition, specs, function, and classification signals.
+
+const PRODUCT_INTEL_CACHE_MAX = 200;
+const productIntelCache = new Map();
+
+// Search-preview models reject LangChain's default params — use raw OpenAI SDK
+let _openaiClient = null;
+function getOpenAIClient() {
+    if (!_openaiClient) _openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return _openaiClient;
+}
+
+export const understandProductTool = new DynamicStructuredTool({
+    name: "understand_product",
+    description: "Search the internet to deeply understand a product before classification. Call this FIRST for any product where: (1) the name contains a model number, brand, or technical term you are not 100% certain about, (2) the product type is ambiguous, or (3) the description is very short. Returns material, specs, function, and key classification signals.",
+    schema: z.object({
+        product_query: z.string().describe("The full product name, model number, or description to research online.")
+    }),
+    func: async ({ product_query }) => {
+        const cacheKey = product_query.toLowerCase().trim();
+        if (productIntelCache.has(cacheKey)) {
+            console.log(`Product intel cache HIT: ${product_query}`);
+            return productIntelCache.get(cacheKey);
+        }
+
+        console.log(`Researching product online: ${product_query}`);
+
+        try {
+            const client = getOpenAIClient();
+            const response = await client.chat.completions.create({
+                model: "gpt-4o-search-preview",
+                web_search_options: {},
+                messages: [{
+                    role: "user",
+                    content:
+                        `You are a customs classification specialist. Research this product for EU import declaration purposes:\n\n"${product_query}"\n\n` +
+                        `Search the internet and return ONLY the following — be factual, concise, and specific:\n\n` +
+                        `1. PRODUCT TYPE: Exact category (e.g. "robotic lawn mower", "industrial servo motor", "lithium-ion battery pack")\n` +
+                        `2. BRAND & MODEL: Confirm brand and model if identifiable — what is this specific product?\n` +
+                        `3. MATERIAL COMPOSITION: Primary materials (metal type, plastic type, textile fibre, etc.)\n` +
+                        `4. POWER / DRIVE: Electric / combustion / manual / hydraulic / pneumatic? Battery voltage if applicable.\n` +
+                        `5. AUTOMATION: Autonomous / robotic / remote-controlled / operator-controlled / manual?\n` +
+                        `6. PRIMARY FUNCTION: What does it do? Where is it used?\n` +
+                        `7. KEY CLASSIFICATION SIGNALS: Features that determine the HS heading (e.g. "cutting device rotates horizontally", "no direct human control", "for outdoor use", "contains PCB").\n` +
+                        `8. LIKELY HS CHAPTER: Your best estimate of the 2-digit HS chapter.\n\n` +
+                        `If the product cannot be found online, state that clearly and describe what you can infer from the name alone.`
+                }]
+            });
+
+            const result = `[PRODUCT INTELLIGENCE — "${product_query}"]\n\n${response.choices[0].message.content}`;
+
+            if (productIntelCache.size >= PRODUCT_INTEL_CACHE_MAX) {
+                productIntelCache.delete(productIntelCache.keys().next().value);
+            }
+            productIntelCache.set(cacheKey, result);
+            return result;
+
+        } catch (err) {
+            console.error(`Product intel error for "${product_query}":`, err.message);
+            return `[PRODUCT INTELLIGENCE — could not research "${product_query}" online: ${err.message}. Proceed with product name analysis only.]`;
+        }
+    }
+});
 
 // ─── Tool 1: GN 2026 Keyword Search ──────────────────────────────────────
 
@@ -201,7 +271,11 @@ export const lookupCnCodeTool = new DynamicStructuredTool({
             return errorMsg;
         }
 
-        return `✅ GN 2026 Code Confirmed: ${codeClean}\n\nDescription : ${exact.omschrijving}\nDuty rate   : ${exact.douanerecht || "0%"}\nLevel       : ${exact.code_niveau}\n`;
+        // Only include DKM fields if the CSV actually has data in them
+        const correctionLine = exact.dkm_correction ? `DKM Correction: ${exact.dkm_correction}\n` : '';
+        const commentLine = exact.dkm_comment ? `DKM Comment   : ${exact.dkm_comment}\n` : '';
+
+        return `✅ GN 2026 Code Confirmed: ${codeClean}\n\nDescription   : ${exact.omschrijving}\nDuty rate     : ${exact.douanerecht || "0%"}\nLevel         : ${exact.code_niveau}\n${correctionLine}${commentLine}`;
     }
 });
 
@@ -214,6 +288,12 @@ export const searchEurlexCustomsTool = new DynamicStructuredTool({
         search_query: z.string().describe("The query to search in EUR-Lex — include the 4-digit heading code + product description.")
     }),
     func: async ({ search_query }) => {
+        // Graceful fallback when Pinecone is not configured
+        if (!process.env.PINECONE_API_KEY) {
+            console.warn("PINECONE_API_KEY not set — EUR-Lex search skipped.");
+            return "EUR-Lex legal database is currently unavailable (PINECONE_API_KEY not configured). Proceed with GN 2026 data only. Note that Chapter Notes and Section Notes could not be verified from EUR-Lex.";
+        }
+
         const cacheKey = search_query.toLowerCase().trim();
         if (pineconeCache.has(cacheKey)) {
             console.log(`Pinecone cache HIT for: ${search_query}`);
@@ -321,28 +401,31 @@ export const getTaricCompletionsTool = new DynamicStructuredTool({
             output += `\n⚠️ **Present these options to the user (translate descriptions to English) and ask:** "Which of these descriptions best matches your specific product?"\n`;
             output += `\n🔗 Check all options: https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${codeClean}`;
         } else if (eightDigit.length > 0) {
-            // No 10-digit TARIC subdivisions — standard EU practice: append "00"
-            output = `📋 No 10-digit TARIC subdivisions found for ${codeClean} in GN 2026.\n\n`;
-            output += `✅ **Standard "00" completion applies — StreamLiner 10-digit codes:**\n\n`;
-            output += `| # | CN Code (8-digit) | StreamLiner 10-digit | Description (NL — translate to EN) | Duty |\n`;
+            // No 10-digit TARIC subdivisions in local GN 2026 — standard "00" rule applies
+            // BUT the live EU TARIC may have subdivisions not in the local dataset
+            output = `📋 **GN 2026 internal dataset: No 10-digit TARIC subdivisions found for ${codeClean}.**\n\n`;
+            output += `| # | CN Code (8-digit) | Provisional 10-digit | Description (NL — translate to EN) | Duty |\n`;
             output += `|---|-------------------|---------------------|--------------------------------------|------|\n`;
             eightDigit.slice(0, 10).forEach((r, i) => {
                 const duty = r.douanerecht || '0%';
                 output += `| ${i + 1} | ${r.gn_code} | **${r.gn_code}00** | ${r.omschrijving} | ${duty} |\n`;
             });
-            output += `\n🔔 **TARIC "00" RULE — MUST INCLUDE IN YOUR RESPONSE:**\n`;
-            output += `GN 2026 has no further TARIC subdivisions for this heading. Per standard EU TARIC practice, the full 10-digit code is the 8-digit CN code + "00". `;
-            output += `You MUST tell the user: "The '00' suffix was added because no TARIC subdivisions exist for this code. This is the correct and standard 10-digit code to enter in StreamLiner."\n`;
-            output += `\n🔗 Verify: https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${codeClean}00`;
+            output += `\n⚠️ **MANDATORY WARNING — YOU MUST INCLUDE THIS IN YOUR RESPONSE WORD FOR WORD:**\n`;
+            output += `"The internal GN 2026 dataset shows no TARIC subdivisions for this 8-digit code, so ${codeClean}00 is the standard provisional completion. `;
+            output += `HOWEVER, the live EU TARIC database may have additional 10-digit subdivisions that are NOT present in the internal dataset. `;
+            output += `You MUST verify this code at the EU TARIC portal before using it in StreamLiner — click the link below."\n`;
+            output += `\n🔗 **User must verify:** https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${codeClean}`;
         } else {
             const exact = cachedGnDf.find(r => r.gn_code === codeClean);
             if (exact && exact.code_niveau === 'onderverdeling_8') {
-                // Direct 8-digit match — append 00
-                output = `✅ ${codeClean} is a confirmed 8-digit CN terminal code with no TARIC subdivisions.\n\n`;
-                output += `**StreamLiner 10-digit code: ${codeClean}00**\n\n`;
+                // Direct 8-digit match — provisional "00" with same live TARIC caveat
+                output = `⚠️ ${codeClean} is an 8-digit CN terminal code in the internal dataset with no recorded TARIC subdivisions.\n\n`;
+                output += `**Provisional StreamLiner 10-digit code: ${codeClean}00**\n\n`;
                 output += `Description: ${exact.omschrijving}\nDuty: ${exact.douanerecht || '0%'}\n\n`;
-                output += `🔔 **Tell the user**: "00" was appended per standard EU TARIC practice because no subdivisions exist. This is the correct code for StreamLiner.\n`;
-                output += `\n🔗 Verify: https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${codeClean}00`;
+                output += `⚠️ **MANDATORY WARNING — YOU MUST INCLUDE THIS IN YOUR RESPONSE:**\n`;
+                output += `"The '00' suffix is provisional. The live EU TARIC database may have additional subdivisions not captured in the internal GN 2026 dataset. `;
+                output += `The user MUST verify at the EU TARIC portal before finalising in StreamLiner."\n`;
+                output += `\n🔗 **User must verify:** https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${codeClean}`;
             } else if (exact) {
                 output = `✅ ${codeClean} is a terminal code (${exact.code_niveau}). No further subdivisions.\n\nDescription: ${exact.omschrijving}\nDuty: ${exact.douanerecht || '0%'}`;
             } else {
@@ -351,5 +434,104 @@ export const getTaricCompletionsTool = new DynamicStructuredTool({
         }
 
         return output;
+    }
+});
+
+// ─── Tool 5: Live TARIC Subdivision Lookup ────────────────────────────────
+// Uses the UK Trade Tariff REST API (JSON, public, no auth) which mirrors
+// the EU Combined Nomenclature at the 10-digit level. The 10-digit code
+// structure is identical to EU TARIC subdivisions.
+
+const LIVE_TARIC_CACHE_MAX = 150;
+const liveTaricCache = new Map();
+
+export const queryLiveTaricTool = new DynamicStructuredTool({
+    name: "query_live_eu_taric",
+    description: "Query the live TARIC database to get real 10-digit subdivisions for a CN code. ALWAYS call this when the internal GN 2026 dataset shows no 10-digit subdivisions (i.e. the '00 rule' was triggered). Returns the actual 10-digit codes with full English descriptions.",
+    schema: z.object({
+        cn_code: z.string().describe("The 8-digit CN code to query (no spaces or dots).")
+    }),
+    func: async ({ cn_code }) => {
+        const parent8 = cn_code.trim().replace(/[\s.]/g, "").slice(0, 8);
+        if (parent8.length < 4) return `Invalid code: ${cn_code}`;
+
+        if (liveTaricCache.has(parent8)) {
+            console.log(`Live TARIC cache HIT: ${parent8}`);
+            return liveTaricCache.get(parent8);
+        }
+
+        const heading4 = parent8.slice(0, 4);
+        const apiUrl = `https://www.trade-tariff.service.gov.uk/api/v2/headings/${heading4}?include=chapter,section,commodities`;
+        const taricUrl = `https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=${parent8}`;
+
+        console.log(`Querying live TARIC for ${parent8} via UK Trade Tariff API...`);
+
+        try {
+            const res = await fetch(apiUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(15000)
+            });
+
+            if (!res.ok) {
+                return `⚠️ Live TARIC API returned HTTP ${res.status}. Verify manually: ${taricUrl}`;
+            }
+
+            const data = await res.json();
+            const included = data.included || [];
+
+            // Find all commodity entries whose code starts with our 8-digit parent,
+            // are exactly 10 digits, and are NOT the "00" padding of the parent itself.
+            const children = included.filter(item =>
+                item.type === 'commodity' &&
+                typeof item.attributes?.goods_nomenclature_item_id === 'string' &&
+                item.attributes.goods_nomenclature_item_id.startsWith(parent8) &&
+                item.attributes.goods_nomenclature_item_id.length === 10 &&
+                item.attributes.goods_nomenclature_item_id !== `${parent8}00`
+            );
+
+            // Deduplicate by code (API can return the same code multiple times)
+            const seen = new Set();
+            const unique = children.filter(c => {
+                const code = c.attributes.goods_nomenclature_item_id;
+                if (seen.has(code)) return false;
+                seen.add(code);
+                return true;
+            });
+
+            let result;
+
+            if (unique.length === 0) {
+                result = [
+                    `✅ Live TARIC confirmed: No 10-digit subdivisions exist for ${parent8}.`,
+                    `The code **${parent8}00** is correct for StreamLiner (standard '00' rule applies).`,
+                    `🔗 Verify: ${taricUrl}`
+                ].join('\n');
+            } else {
+                result = `✅ Live TARIC — **${unique.length} real 10-digit subdivision(s)** found for ${parent8}:\n\n`;
+                result += `| # | TARIC Code | Official Description |\n`;
+                result += `|---|------------|---------------------|\n`;
+                unique.forEach((item, i) => {
+                    const code = item.attributes.goods_nomenclature_item_id;
+                    const desc = (item.attributes.description || item.attributes.formatted_description || '').slice(0, 180);
+                    result += `| ${i + 1} | **${code}** | ${desc} |\n`;
+                });
+                result += `\n⚠️ **IMPORTANT: These are the REAL 10-digit TARIC codes. Do NOT use the provisional '${parent8}00' code.**`;
+                result += `\nPresent these options to the user and ask which best matches their product.`;
+                result += `\n🔗 EU TARIC reference: ${taricUrl}`;
+            }
+
+            if (liveTaricCache.size >= LIVE_TARIC_CACHE_MAX) {
+                liveTaricCache.delete(liveTaricCache.keys().next().value);
+            }
+            liveTaricCache.set(parent8, result);
+            return result;
+
+        } catch (err) {
+            console.error(`Live TARIC fetch error for ${parent8}:`, err.message);
+            return `⚠️ Could not query live TARIC (${err.message}). Verify manually: ${taricUrl}`;
+        }
     }
 });

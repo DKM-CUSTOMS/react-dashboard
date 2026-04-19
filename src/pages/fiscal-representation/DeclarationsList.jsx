@@ -472,17 +472,23 @@ const DeclarationsList = () => {
                                             </td>
                                             <td className="px-3 py-1.5 text-right">
                                                 <div className="flex justify-end gap-1.5 items-center">
-                                                    {row.odoo_status === 'NEW' && (
+                                                    {(row.odoo_status === 'NEW' || row.odoo_status === 'FAILED') && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 handleCreateProject(row);
                                                             }}
                                                             disabled={isCreatingProject || isBulkSyncing}
-                                                            className="bg-[#714B67] hover:bg-[#5a3c52] disabled:opacity-50 disabled:cursor-not-allowed text-white text-[10px] font-bold py-1 px-3 rounded-[3px] transition-colors shadow-sm flex items-center justify-center min-w-[80px]"
+                                                            className={`disabled:opacity-50 disabled:cursor-not-allowed text-white text-[10px] font-bold py-1 px-3 rounded-[3px] transition-colors shadow-sm flex items-center justify-center min-w-[80px] ${
+                                                                row.odoo_status === 'FAILED'
+                                                                    ? 'bg-red-600 hover:bg-red-700'
+                                                                    : 'bg-[#714B67] hover:bg-[#5a3c52]'
+                                                            }`}
                                                         >
                                                             {isCreatingProject && selectedDeclaration?.declaration_id === row.declaration_id ? (
                                                                 <RefreshCw className="w-3 h-3 animate-spin" />
+                                                            ) : row.odoo_status === 'FAILED' ? (
+                                                                'Retry'
                                                             ) : (
                                                                 'Sync Odoo'
                                                             )}
@@ -551,9 +557,10 @@ const DeclarationsList = () => {
 
             {/* ─── Details Modal ─── */}
             {selectedDeclaration && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
-                        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 rounded-t-lg">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+                        {/* Sticky header — always visible */}
+                        <div className="flex-shrink-0 p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50 rounded-t-lg">
                             <div>
                                 <h3 className="text-lg font-bold text-gray-900">Declaration Details</h3>
                                 <p className="text-xs text-gray-500 font-mono mt-0.5">#{selectedDeclaration.declaration_id} • {selectedDeclaration.mrn || 'No MRN'}</p>
@@ -566,7 +573,8 @@ const DeclarationsList = () => {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-8">
+                        {/* Scrollable body */}
+                        <div className="overflow-y-auto flex-1 p-6 space-y-8">
 
                             {/* 1. General Info */}
                             <div>
@@ -608,10 +616,6 @@ const DeclarationsList = () => {
                                         <p className="text-sm font-medium text-gray-900">{selectedDeclaration.principal || '-'}</p>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-400 font-medium">Importer Code</label>
-                                        <p className="text-sm font-medium text-gray-900">{selectedDeclaration.importer_code || '-'}</p>
-                                    </div>
-                                    <div className="space-y-1">
                                         <label className="text-xs text-gray-400 font-medium">Traces ID</label>
                                         <p className="text-sm font-medium text-gray-900">{selectedDeclaration.traces_identification || '-'}</p>
                                     </div>
@@ -626,7 +630,60 @@ const DeclarationsList = () => {
                                 </div>
                             </div>
 
-                            {/* 3. StreamSoftware Raw Data */}
+                            {/* 3. Address & Location */}
+                            {(selectedDeclaration.straat_en_nummer || selectedDeclaration.stad || selectedDeclaration.postcode || selectedDeclaration.landcode || selectedDeclaration.importer_code || selectedDeclaration.plda_operatoridentity) && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-100 pb-1">Address & Location</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6">
+                                        <div className="col-span-2 space-y-1">
+                                            <label className="text-xs text-gray-400 font-medium">Street & Number</label>
+                                            <p className="text-sm font-medium text-gray-900">{selectedDeclaration.straat_en_nummer || '-'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-gray-400 font-medium">Postcode</label>
+                                            <p className="text-sm font-medium text-gray-900">{selectedDeclaration.postcode || '-'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-gray-400 font-medium">City</label>
+                                            <p className="text-sm font-medium text-gray-900">{selectedDeclaration.stad || '-'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-gray-400 font-medium">Country Code</label>
+                                            <p className="text-sm font-medium text-gray-900">{selectedDeclaration.landcode || '-'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-gray-400 font-medium">Importer Code</label>
+                                            <p className="text-sm font-medium text-gray-900">{selectedDeclaration.importer_code || '-'}</p>
+                                        </div>
+                                        {(selectedDeclaration.plda_operatoridentity || selectedDeclaration.plda_operatoridentitycountry) && (
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-gray-400 font-medium">VAT Number</label>
+                                                <p className="text-sm font-mono font-medium text-gray-900">
+                                                    {[selectedDeclaration.plda_operatoridentitycountry, selectedDeclaration.plda_operatoridentity].filter(Boolean).join('') || '-'}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 5. Containers */}
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-100 pb-1">Containers</h4>
+                                {selectedDeclaration.containers_list ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedDeclaration.containers_list.split(',').map(c => c.trim()).filter(Boolean).map((container, i) => (
+                                            <span key={i} className="inline-flex items-center px-2.5 py-1 rounded bg-gray-100 border border-gray-200 font-mono text-xs text-gray-700 font-medium">
+                                                {container}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 italic">No containers</p>
+                                )}
+                            </div>
+
+                            {/* 6. StreamSoftware Raw Data */}
                             <div>
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-100 pb-1">StreamSoftware Data</h4>
                                 <div className="space-y-4">
@@ -639,7 +696,7 @@ const DeclarationsList = () => {
                                     <div className="space-y-1">
                                         <label className="text-xs text-gray-400 font-medium">Link String</label>
                                         <div className="bg-gray-50 p-2 rounded border border-gray-100 font-mono text-[10px] text-gray-500 break-all">
-                                            {selectedDeclaration.odoo_linkstring || '-'}
+                                            {selectedDeclaration.odoo_linkstring_streamsoftware || '-'}
                                         </div>
                                     </div>
                                     <div className="space-y-1">
@@ -649,59 +706,53 @@ const DeclarationsList = () => {
                                 </div>
                             </div>
 
-                            {/* 4. Action & Status */}
-                            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <div className="flex justify-between items-center mb-4">
-                                    <div>
-                                        <h4 className="text-sm font-bold text-gray-900">Odoo Ticket Integration</h4>
-                                        <p className="text-xs text-gray-500 mt-0.5">
-                                            Last Updated: {selectedDeclaration.odoo_updated_at ? new Date(selectedDeclaration.odoo_updated_at).toLocaleString() : 'Never'}
-                                        </p>
-                                    </div>
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${selectedDeclaration.odoo_status === 'NEW' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                        </div>
+
+                        {/* Sticky footer — Odoo action always visible */}
+                        <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50/80 px-6 py-3">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border flex-shrink-0 ${
+                                        selectedDeclaration.odoo_status === 'NEW' ? 'bg-blue-100 text-blue-800 border-blue-200' :
                                         selectedDeclaration.odoo_status === 'PENDING' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                                            selectedDeclaration.odoo_status === 'CREATED' ? 'bg-green-100 text-green-800 border-green-200' :
-                                                'bg-red-100 text-red-800 border-red-200'
-                                        }`}>
+                                        selectedDeclaration.odoo_status === 'CREATED' ? 'bg-green-100 text-green-800 border-green-200' :
+                                        'bg-red-100 text-red-800 border-red-200'
+                                    }`}>
                                         {selectedDeclaration.odoo_status}
                                     </span>
+                                    {selectedDeclaration.odoo_updated_at && (
+                                        <span className="text-xs text-gray-400 truncate">
+                                            Updated {new Date(selectedDeclaration.odoo_updated_at).toLocaleString()}
+                                        </span>
+                                    )}
+                                    {selectedDeclaration.odoo_error && (
+                                        <span className="text-xs text-red-600 font-mono truncate" title={selectedDeclaration.odoo_error}>
+                                            ⚠ {selectedDeclaration.odoo_error}
+                                        </span>
+                                    )}
                                 </div>
 
-                                {selectedDeclaration.odoo_error && (
-                                    <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-xs text-red-700 font-mono break-all">
-                                        Error: {selectedDeclaration.odoo_error}
-                                    </div>
-                                )}
-
                                 {selectedDeclaration.odoo_project_id ? (
-                                    <div className="flex items-center gap-3 bg-white p-3 rounded border border-green-200 shadow-sm">
-                                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                                            <FileText className="w-4 h-4 text-green-600" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-green-900">Ticket Created</p>
-                                            <p className="text-xs text-green-700">Ticket ID: {selectedDeclaration.odoo_project_id}</p>
-                                        </div>
-                                        <a
-                                            href={`https://dkm-customs.odoo.com/odoo/helpdesk/5/tickets/${selectedDeclaration.odoo_project_id}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="ml-auto text-xs font-medium text-green-700 hover:text-green-800 underline flex items-center gap-1"
-                                        >
-                                            Open Ticket
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                        </a>
-                                    </div>
+                                    <a
+                                        href={`https://dkm-customs.odoo.com/odoo/helpdesk/5/tickets/${selectedDeclaration.odoo_project_id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Open Ticket #{selectedDeclaration.odoo_project_id}
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                    </a>
                                 ) : (
                                     <button
-                                        className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#714B67] hover:bg-[#5a3c52] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#714B67] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-[#714B67] hover:bg-[#5a3c52] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         onClick={() => handleCreateProject()}
                                         disabled={selectedDeclaration.odoo_status === 'PENDING' || isCreatingProject}
                                     >
                                         {isCreatingProject ? (
                                             <>
-                                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                                Creating Ticket...
+                                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                                Creating...
                                             </>
                                         ) : selectedDeclaration.odoo_status === 'PENDING' ? (
                                             'Syncing...'
