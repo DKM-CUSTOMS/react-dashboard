@@ -16,6 +16,7 @@ import ArrivalsGuide from './pages/arrivals/ArrivalsGuide';
 import SendingFiscal from './pages/fiscal-representation/SendingFiscal';
 import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
 import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
+import BestmingSignatures from './pages/fiscal-representation/BestmingSignatures';
 import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
 import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
 import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
@@ -82,7 +83,8 @@ const router = createBrowserRouter([
       { path: 'arrivals/outbounds/:mrn', element: withAccess(<OutboundsTable />, ['Arrivals Agent', 'admin', 'manager', 'Team Leader', 'Senior']) },
       { path: 'fiscal/sending', element: withAccess(<SendingFiscal />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/declarations', element: withAccess(<DeclarationsList />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
-      { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) }, // Added
+      { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
+      { path: 'fiscal/bestming-signatures', element: withAccess(<BestmingSignatures />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['developer']) },
       { path: 'admin/user-roles', element: withAccess(<UserRolesPage />, ['developer']) },
     ],
