@@ -115,22 +115,23 @@ app.post('/api/tracking/bulk', (req, res) => {
 // ============================================================
 const FISCAL_CONTAINER = "document-intelligence";
 const FISCAL_BLOB_PATH = "FiscalRepresentationWebApp/principals.json";
+const FISCAL_FILTERS_BLOB_PATH = "FiscalRepresentationWebApp/filters.json";
 
 // Helper: get blob client
-const getFiscalBlobClient = () => {
+const getFiscalBlobClient = (blobPath = FISCAL_BLOB_PATH) => {
   const connectionString = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
   if (!connectionString) {
     throw new Error('VITE_AZURE_STORAGE_CONNECTION_STRING is not configured');
   }
   const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
   const containerClient = blobServiceClient.getContainerClient(FISCAL_CONTAINER);
-  return containerClient.getBlockBlobClient(FISCAL_BLOB_PATH);
+  return containerClient.getBlockBlobClient(blobPath);
 };
 
 // Helper: read principals from blob
 const readPrincipals = async () => {
   try {
-    const blobClient = getFiscalBlobClient();
+    const blobClient = getFiscalBlobClient(FISCAL_BLOB_PATH);
     const downloadResponse = await blobClient.download(0);
     const chunks = [];
     for await (const chunk of downloadResponse.readableStreamBody) {
@@ -149,7 +150,7 @@ const readPrincipals = async () => {
 
 // Helper: write principals to blob
 const writePrincipals = async (principals) => {
-  const blobClient = getFiscalBlobClient();
+  const blobClient = getFiscalBlobClient(FISCAL_BLOB_PATH);
   const content = JSON.stringify({ principals }, null, 2);
   await blobClient.upload(content, content.length, {
     overwrite: true,
@@ -250,6 +251,61 @@ app.delete('/api/fiscal/principals', async (req, res) => {
   }
 });
 
+// ============================================================
+// Fiscal Representation - Bestming Filters
+// ============================================================
+const readFilters = async () => {
+  try {
+    const blobClient = getFiscalBlobClient(FISCAL_FILTERS_BLOB_PATH);
+    const downloadResponse = await blobClient.download(0);
+    const chunks = [];
+    for await (const chunk of downloadResponse.readableStreamBody) {
+      chunks.push(chunk);
+    }
+    const content = Buffer.concat(chunks).toString('utf8');
+    const data = JSON.parse(content);
+    return data.filters || [];
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return [];
+    }
+    throw err;
+  }
+};
+
+const writeFilters = async (filters) => {
+  const blobClient = getFiscalBlobClient(FISCAL_FILTERS_BLOB_PATH);
+  const content = JSON.stringify({ filters }, null, 2);
+  await blobClient.upload(content, content.length, {
+    overwrite: true,
+    blobHTTPHeaders: { blobContentType: 'application/json' },
+  });
+};
+
+app.get('/api/fiscal/filters', async (req, res) => {
+  try {
+    const filters = await readFilters();
+    res.json({ filters });
+  } catch (err) {
+    console.error('Error reading filters:', err);
+    res.status(500).json({ error: 'Failed to read filters' });
+  }
+});
+
+app.post('/api/fiscal/filters', async (req, res) => {
+  try {
+    const { filters } = req.body;
+    if (!Array.isArray(filters)) {
+      return res.status(400).json({ error: 'Filters format invalid.' });
+    }
+    await writeFilters(filters);
+    res.json({ success: true, filters });
+  } catch (err) {
+    console.error('Error saving filters:', err);
+    res.status(500).json({ error: 'Failed to save filters' });
+  }
+});
+
 // POST - Request Logic App generation 
 app.post('/api/fiscal/generate-documents', async (req, res) => {
   const url = process.env.LOGIC_APP_DEBENOTE_URL;
@@ -276,6 +332,57 @@ app.post('/api/fiscal/generate-documents', async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('Error calling logic app:', err);
+    res.status(500).json({ error: 'Failed to connect to Logic App' });
+  }
+});
+
+// GET - BestMing docs from Logic App (proxy — keeps SAS URL server-side)
+app.get('/api/fiscal/bestming-docs', async (_req, res) => {
+  const url = process.env.LOGIC_APP_BESTMING_URL;
+  if (!url) {
+    return res.status(500).json({ error: 'LOGIC_APP_BESTMING_URL not configured in environment' });
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: `Logic App returned status ${response.status}`,
+      });
+    }
+
+    const data = await response.json();
+    // Logic App returns either an array or { Table1: [...] }
+    let rows = Array.isArray(data) ? data : (data.Table1 ?? []);
+    
+    // Apply filters
+    try {
+      const filters = await readFilters();
+      filters.filter(f => f.active).forEach(filter => {
+        const { field, operator, value } = filter;
+        rows = rows.filter(row => {
+            const rowVal = String(row[field] || '').toLowerCase();
+            const filterVal = String(value || '').toLowerCase();
+            switch (operator) {
+                case 'equals': return rowVal === filterVal;
+                case 'not_equals': return rowVal !== filterVal;
+                case 'contains': return rowVal.includes(filterVal);
+                case 'not_contains': return !rowVal.includes(filterVal);
+                default: return true;
+            }
+        });
+      });
+    } catch (err) {
+        console.error('[bestming-docs] Error applying filters:', err);
+    }
+    
+    res.json(rows);
+  } catch (err) {
+    console.error('[bestming-docs] Error calling Logic App:', err);
     res.status(500).json({ error: 'Failed to connect to Logic App' });
   }
 });

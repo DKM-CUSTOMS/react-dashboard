@@ -6,9 +6,9 @@ export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-x-visible">
+    <div className="min-h-screen">
       <Sidebar collapsed={collapsed} toggle={() => setCollapsed(!collapsed)} />
-      <main className={`flex-1 transition-all ease-in ${collapsed ? 'ms-16' : 'ms-64'}`}>
+      <main className={`transition-all ease-in ${collapsed ? 'pl-16' : 'pl-64'}`}>
         <Outlet />
       </main>
     </div>

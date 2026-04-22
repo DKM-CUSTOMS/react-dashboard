@@ -15,8 +15,10 @@ import {
     PenLine,
 
     FileSignature,
+    Settings
 } from 'lucide-react';
-import { getBestmingDocs } from '../../api/bestmingApi';
+import { getBestmingDocs, sendDocuSignRequest } from '../../api/bestmingApi';
+import FiscalSettings from './FiscalSettings';
 
 // ─── Debounce Hook ────────────────────────────────────────────
 const useDebounce = (value, delay) => {
@@ -38,8 +40,8 @@ const SortIcon = ({ col, sort, order }) => {
 
 // ─── Status Badge ─────────────────────────────────────────────
 const STATUS_STYLES = {
-    DMSCLE:  'bg-green-50 text-green-700 border-green-100',
-    CREATE:  'bg-blue-50 text-blue-700 border-blue-100',
+    DMSCLE: 'bg-green-50 text-green-700 border-green-100',
+    CREATE: 'bg-blue-50 text-blue-700 border-blue-100',
     DELETED: 'bg-red-50 text-red-600 border-red-100',
     DEFAULT: 'bg-gray-50 text-gray-600 border-gray-100',
 };
@@ -55,16 +57,17 @@ const StatusBadge = ({ status }) => {
 
 // ─── Column Definitions ───────────────────────────────────────
 const COLUMNS = [
-    { key: 'DECLARATION_ID',       label: 'Dec. ID',        sortable: true,  copyable: true,  mono: true  },
-    { key: 'ACTIVECOMPANY',        label: 'Company',        sortable: true,  copyable: false, mono: false },
-    { key: 'TRACESIDENTIFICATION', label: 'Traces ID',      sortable: true,  copyable: true,  mono: false },
-    { key: 'FISCALCONSIGNEECODE',  label: 'Consignee',      sortable: true,  copyable: false, mono: false },
-    { key: 'IMPORTERCODE',         label: 'Importer',       sortable: true,  copyable: false, mono: false },
-    { key: 'IMPORTERCOUNTRY',      label: 'Country',        sortable: true,  copyable: false, mono: false },
-    { key: 'MESSAGESTATUS',        label: 'Status',         sortable: true,  copyable: false, mono: false },
-    { key: 'PRINCIPAL',            label: 'Principal',      sortable: true,  copyable: false, mono: false },
-    { key: 'DATEOFACCEPTANCE',     label: 'Acceptance',     sortable: true,  copyable: false, mono: false },
-    { key: 'PROCESSFACTUURNUMMER', label: 'Invoice No.',    sortable: true,  copyable: true,  mono: true  },
+    { key: 'DECLARATION_ID', label: 'DECLARATION_ID', sortable: true, copyable: true, mono: true },
+    { key: 'ACTIVECOMPANY', label: 'ACTIVECOMPANY', sortable: true, copyable: false, mono: false },
+    { key: 'TRACESIDENTIFICATION', label: 'TRACESIDENTIFICATION', sortable: true, copyable: true, mono: false },
+    { key: 'FISCALCONSIGNEECODE', label: 'FISCALCONSIGNEECODE', sortable: true, copyable: false, mono: false },
+    { key: 'IMPORTERCODE', label: 'IMPORTERCODE', sortable: true, copyable: false, mono: false },
+    { key: 'IMPORTERCOUNTRY', label: 'IMPORTERCOUNTRY', sortable: true, copyable: false, mono: false },
+    { key: 'LINKIDERP4', label: 'LINKIDERP4', sortable: true, copyable: false, mono: false },
+    { key: 'MESSAGESTATUS', label: 'MESSAGESTATUS', sortable: true, copyable: false, mono: false },
+    { key: 'PRINCIPAL', label: 'PRINCIPAL', sortable: true, copyable: false, mono: false },
+    { key: 'DATEOFACCEPTANCE', label: 'DATEOFACCEPTANCE', sortable: true, copyable: false, mono: false },
+    { key: 'PROCESSFACTUURNUMMER', label: 'PROCESSFACTUURNUMMER', sortable: true, copyable: true, mono: true },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -79,34 +82,50 @@ const strVal = (v) => (v == null ? '' : String(v)).toLowerCase();
 // ─── Main Component ───────────────────────────────────────────
 const BestmingSignatures = () => {
     // ── Search & Filters ──────────────────────────────────────
-    const [searchInput, setSearchInput]   = useState('');
-    const debouncedSearch                 = useDebounce(searchInput, 250);
+    const [searchInput, setSearchInput] = useState('');
+    const debouncedSearch = useDebounce(searchInput, 250);
     const [filterFrom, setFilterFrom] = useState('');
-    const [filterTo,      setFilterTo]      = useState('');
+    const [filterTo, setFilterTo] = useState('');
+
+    const [showSettings, setShowSettings] = useState(false);
 
     // ── Sort ──────────────────────────────────────────────────
-    const [sortBy,    setSortBy]    = useState('DATEOFACCEPTANCE');
+    const [sortBy, setSortBy] = useState('DATEOFACCEPTANCE');
     const [sortOrder, setSortOrder] = useState('desc');
 
     // ── UI State ──────────────────────────────────────────────
-    const [focusedIndex,  setFocusedIndex]  = useState(-1);
-    const [copiedKey,     setCopiedKey]     = useState(null);   // "<rowId>-<field>" for copy flash
-    const [toast,         setToast]         = useState({ show: false, message: '', type: 'success' });
+    const [focusedIndex, setFocusedIndex] = useState(-1);
+    const [copiedKey, setCopiedKey] = useState(null);   // "<rowId>-<field>" for copy flash
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
     // ── DocuSign pending: ref for instant guard + state for re-render ──
-    const pendingSignRef   = useRef(new Set());          // immediate double-click guard
+    const pendingSignRef = useRef(new Set());          // immediate double-click guard
     const [pendingSignIds, setPendingSignIds] = useState(new Set());
 
     const searchRef = useRef(null);
 
+    // ── Local Storage Cache Hydration ─────────────────────────
+    const cachedData = useMemo(() => {
+        try {
+            const raw = localStorage.getItem('BESTMING_CACHE_DATA');
+            return raw ? JSON.parse(raw) : undefined;
+        } catch (e) {
+            return undefined;
+        }
+    }, []);
+
     // ── Data Fetching ─────────────────────────────────────────
     const { data: rawRows = [], isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
         queryKey: ['bestming-docs'],
-        queryFn:  getBestmingDocs,
+        queryFn: getBestmingDocs,
         staleTime: 5 * 60 * 1000,   // 5 min cache
-        gcTime:   30 * 60 * 1000,   // 30 min gc
+        gcTime: 30 * 60 * 1000,     // 30 min gc
         refetchOnWindowFocus: false,
         retry: 2,
+        initialData: cachedData,
+        // Mark cache as immediately infinitely old (stale) so React Query runs a background fetch
+        // invisibly on component mount without blocking the UI rendering!
+        initialDataUpdatedAt: cachedData ? 0 : undefined,
     });
 
     // ── Client-Side Filter + Sort ─────────────────────────────
@@ -167,34 +186,34 @@ const BestmingSignatures = () => {
 
     // ── Sort Handler ──────────────────────────────────────────
     const handleSort = useCallback((key) => {
-        setSortBy(prev => {
-            if (prev === key) {
-                setSortOrder(o => o === 'asc' ? 'desc' : 'asc');
-                return prev;
-            }
+        if (sortBy === key) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(key);
             setSortOrder('desc');
-            return key;
-        });
-    }, []);
+        }
+    }, [sortBy, sortOrder]);
 
-    // ── DocuSign Action (stub) ────────────────────────────────
-    const handleDocuSign = useCallback((row, e) => {
+    // ── DocuSign Action ───────────────────────────────────────────
+    const handleDocuSign = useCallback(async (row, e) => {
         e?.stopPropagation();
         const id = row.DECLARATION_ID;
 
-        // Double-click / concurrent guard — ref check is synchronous
+        // Double-click / concurrent guard
         if (pendingSignRef.current.has(id)) return;
 
         pendingSignRef.current.add(id);
         setPendingSignIds(prev => new Set([...prev, id]));
 
-        // ── STUB: replace setTimeout with real API call when ready ──
-        // sendDocuSignRequest({ id, principal: row.PRINCIPAL, processFactuurnummer: row.PROCESSFACTUURNUMMER })
-        setTimeout(() => {
+        try {
+            await sendDocuSignRequest({ id, principal: row.PRINCIPAL, processFactuurnummer: row.PROCESSFACTUURNUMMER });
+            showToast(`Signature request sent for Declaration #${id}`, 'success');
+        } catch (err) {
+            showToast(`Failed to send request: ${err.message}`, 'error');
+        } finally {
             pendingSignRef.current.delete(id);
             setPendingSignIds(prev => { const n = new Set(prev); n.delete(id); return n; });
-            showToast(`Signature request sent for Declaration #${id}`, 'success');
-        }, 1200);
+        }
     }, [showToast]);
 
     // ── Keyboard Navigation ───────────────────────────────────
@@ -258,6 +277,13 @@ const BestmingSignatures = () => {
     // ── Render ────────────────────────────────────────────────
     return (
         <div className="min-h-screen bg-gray-50/50 p-4">
+
+            {showSettings && (
+                <div className="fixed inset-0 z-50 bg-white overflow-y-auto w-full h-full">
+                    <FiscalSettings onClose={() => { setShowSettings(false); refetch(); }} />
+                </div>
+            )}
+
             <div className="w-full space-y-4">
 
                 {/* ── Header ── */}
@@ -279,8 +305,16 @@ const BestmingSignatures = () => {
                         </div>
                     </div>
 
-                    {/* Stats pill + Refresh */}
+                    {/* Stats pill + Refresh + Settings */}
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setShowSettings(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[#714B67] bg-white border border-[#714B67]/20 hover:bg-[#714B67]/5 shadow-sm rounded-md transition-colors font-medium"
+                            title="Filter Settings"
+                        >
+                            <Settings className="w-3.5 h-3.5" />
+                            Filters
+                        </button>
                         <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md shadow-sm text-xs text-gray-500">
                             <FileText className="w-3.5 h-3.5 text-gray-400" />
                             <span className="font-semibold text-gray-700">{rows.length}</span>
@@ -364,9 +398,9 @@ const BestmingSignatures = () => {
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left border-collapse">
-                            <thead className="bg-gray-50 text-gray-400 uppercase font-bold text-[9px] border-b border-gray-200 select-none">
+                    <div className="overflow-auto max-h-[calc(100vh-240px)]">
+                        <table className="w-full text-sm text-left border-collapse relative">
+                            <thead className="sticky top-0 z-20 bg-gray-50 text-gray-400 uppercase font-bold text-[9px] select-none shadow-[0_1px_0_0_#e5e7eb] outline outline-1 outline-gray-200">
                                 <tr>
                                     {COLUMNS.map(col => (
                                         <th
@@ -403,9 +437,12 @@ const BestmingSignatures = () => {
                                     </tr>
                                 ) : (
                                     rows.map((row, index) => {
-                                        const id        = row.DECLARATION_ID;
+                                        const id = row.DECLARATION_ID;
                                         const isPending = pendingSignIds.has(id);
                                         const isDeleted = row.MESSAGESTATUS === 'DELETED';
+                                        const imp = row.IMPORTERCODE?.trim() || '';
+                                        const cons = row.FISCALCONSIGNEECODE?.trim() || '';
+                                        const isMismatched = imp !== cons;
 
                                         return (
                                             <motion.tr
@@ -413,13 +450,14 @@ const BestmingSignatures = () => {
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 transition={{ duration: 0.12, delay: Math.min(index * 0.008, 0.15) }}
-                                                className={`group transition-colors cursor-default ${
-                                                    focusedIndex === index
-                                                        ? 'bg-violet-50/80 ring-1 ring-inset ring-violet-200'
-                                                        : isDeleted
+                                                className={`group transition-colors cursor-default ${focusedIndex === index
+                                                    ? 'bg-violet-50/80 ring-1 ring-inset ring-violet-200'
+                                                    : isDeleted
                                                         ? 'bg-red-50/30 hover:bg-red-50/50'
-                                                        : 'hover:bg-gray-50/60'
-                                                }`}
+                                                        : isMismatched
+                                                            ? 'bg-amber-100 hover:bg-amber-200/70 border-l-2 border-l-amber-400'
+                                                            : 'hover:bg-gray-50/60'
+                                                    }`}
                                                 onClick={() => setFocusedIndex(index)}
                                             >
                                                 {/* Dec. ID — copyable */}
@@ -467,9 +505,24 @@ const BestmingSignatures = () => {
                                                     </span>
                                                 </td>
 
-                                                {/* Status */}
+                                                {/* LINKIDERP4 */}
+                                                <td className="px-3 py-1.5 text-xs text-gray-600 truncate max-w-[120px]" title={row.LINKIDERP4 || ''}>
+                                                    {row.LINKIDERP4 || '—'}
+                                                </td>
+
+                                                {/* Status + ICL tag */}
                                                 <td className="px-3 py-1.5">
-                                                    <StatusBadge status={row.MESSAGESTATUS} />
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <StatusBadge status={row.MESSAGESTATUS} />
+                                                        {isMismatched && (
+                                                            <span
+                                                                className="inline-flex items-center px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold border bg-amber-50 text-amber-700 border-amber-200"
+                                                                title={`Importer (${row.IMPORTERCODE?.trim()}) ≠ Consignee (${row.FISCALCONSIGNEECODE?.trim()})`}
+                                                            >
+                                                                ICL
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
 
                                                 {/* Principal */}
@@ -531,17 +584,15 @@ const BestmingSignatures = () => {
             {/* ── Toast ── */}
             {toast.show && (
                 <div className="fixed bottom-6 right-6 z-[100]" style={{ animation: 'slideInRight 0.3s ease-out' }}>
-                    <div className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-2xl border ${
-                        toast.type === 'success'
-                            ? 'bg-white border-green-500 text-green-800'
-                            : 'bg-white border-red-500 text-red-800'
-                    }`}>
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            toast.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+                    <div className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-2xl border ${toast.type === 'success'
+                        ? 'bg-white border-green-500 text-green-800'
+                        : 'bg-white border-red-500 text-red-800'
                         }`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${toast.type === 'success' ? 'bg-green-100' : 'bg-red-100'
+                            }`}>
                             {toast.type === 'success'
                                 ? <CheckCircle2 className="w-4 h-4 text-green-600" />
-                                : <AlertCircle   className="w-4 h-4 text-red-600" />
+                                : <AlertCircle className="w-4 h-4 text-red-600" />
                             }
                         </div>
                         <p className="text-sm font-medium">{toast.message}</p>
@@ -566,7 +617,7 @@ const BestmingSignatures = () => {
 // ─── CopyCell sub-component ───────────────────────────────────
 const CopyCell = ({ value, flashKey, activeKey, onCopy, mono = false, accent = false, maxW = '' }) => {
     const isCopied = activeKey === flashKey;
-    const display  = value ?? '—';
+    const display = value ?? '—';
     if (value == null) return <span className="text-xs text-gray-300">—</span>;
 
     return (
@@ -574,10 +625,9 @@ const CopyCell = ({ value, flashKey, activeKey, onCopy, mono = false, accent = f
             type="button"
             onClick={onCopy}
             title="Click to copy"
-            className={`group/cell flex items-center gap-1 cursor-copy transition-colors rounded px-0.5 -mx-0.5 hover:bg-gray-100/80 ${
-                mono   ? 'font-mono'    : ''
-            } ${accent ? 'text-[#714B67] font-bold text-[11px]' : 'text-[11px] text-gray-500 hover:text-gray-700'
-            } ${maxW}`}
+            className={`group/cell flex items-center gap-1 cursor-copy transition-colors rounded px-0.5 -mx-0.5 hover:bg-gray-100/80 ${mono ? 'font-mono' : ''
+                } ${accent ? 'text-[#714B67] font-bold text-[11px]' : 'text-[11px] text-gray-500 hover:text-gray-700'
+                } ${maxW}`}
         >
             <span className={`truncate ${maxW}`}>{display}</span>
             {isCopied
@@ -610,7 +660,7 @@ const DocuSignButton = ({ row, isPending, isDeleted, onSign }) => {
         >
             {isPending
                 ? <RefreshCw className="w-3 h-3 animate-spin" />
-                : <PenLine    className="w-3 h-3" />
+                : <PenLine className="w-3 h-3" />
             }
             {isPending ? 'Sending…' : 'Sign'}
         </button>
