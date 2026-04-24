@@ -13,9 +13,12 @@ const CONTAINER_NAME = "document-intelligence";
 const USERS_BLOB_PREFIX = "Dashboard/cache/usersV3/";
 
 function getBlobServiceClient() {
-    const connStr = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
+    const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
+    if (!process.env.AZURE_STORAGE_CONNECTION_STRING && process.env.VITE_AZURE_STORAGE_CONNECTION_STRING) {
+        console.warn("[env] Using legacy VITE_AZURE_STORAGE_CONNECTION_STRING for AZURE_STORAGE_CONNECTION_STRING. Please migrate.");
+    }
     if (!connStr) {
-        throw new Error("Missing VITE_AZURE_STORAGE_CONNECTION_STRING");
+        throw new Error("Missing AZURE_STORAGE_CONNECTION_STRING");
     }
     return BlobServiceClient.fromConnectionString(connStr);
 }

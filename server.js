@@ -34,6 +34,36 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
+const warnedLegacyEnv = new Set();
+function readEnv(name, options = {}) {
+  const {
+    fallbacks = [],
+    required = false,
+    defaultValue = '',
+  } = options;
+
+  const value = process.env[name];
+  if (value != null && String(value).trim() !== '') return value;
+
+  for (const fallback of fallbacks) {
+    const fallbackValue = process.env[fallback];
+    if (fallbackValue != null && String(fallbackValue).trim() !== '') {
+      const warningKey = `${name}<-${fallback}`;
+      if (!warnedLegacyEnv.has(warningKey)) {
+        warnedLegacyEnv.add(warningKey);
+        console.warn(`[env] Using legacy ${fallback} for ${name}. Please migrate to ${name}.`);
+      }
+      return fallbackValue;
+    }
+  }
+
+  if (required) {
+    throw new Error(`${name} is not configured`);
+  }
+
+  return defaultValue;
+}
+
 // Path to JSON store
 const DATA_FILE = path.join(__dirname, 'tracking-data.json');
 
@@ -119,10 +149,10 @@ const FISCAL_FILTERS_BLOB_PATH = "FiscalRepresentationWebApp/filters.json";
 
 // Helper: get blob client
 const getFiscalBlobClient = (blobPath = FISCAL_BLOB_PATH) => {
-  const connectionString = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
-  if (!connectionString) {
-    throw new Error('VITE_AZURE_STORAGE_CONNECTION_STRING is not configured');
-  }
+  const connectionString = readEnv('AZURE_STORAGE_CONNECTION_STRING', {
+    fallbacks: ['VITE_AZURE_STORAGE_CONNECTION_STRING'],
+    required: true,
+  });
   const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
   const containerClient = blobServiceClient.getContainerClient(FISCAL_CONTAINER);
   return containerClient.getBlockBlobClient(blobPath);
@@ -384,6 +414,260 @@ app.get('/api/fiscal/bestming-docs', async (_req, res) => {
   } catch (err) {
     console.error('[bestming-docs] Error calling Logic App:', err);
     res.status(500).json({ error: 'Failed to connect to Logic App' });
+  }
+});
+
+// ============================================================
+// Fiscal Representation - BestMing DocuSign (Secure Proxy + Cache)
+// ============================================================
+const DOCUSIGN_PROCESSOR_URL =
+  readEnv('DOCUSIGN_PROCESSOR_URL', {
+    fallbacks: ['AZURE_DOCUSIGN_PROCESSOR_URL'],
+  }) ||
+  (() => {
+    const legacyBaseUrl = readEnv('LEGACY_DOCUSIGN_PROCESSOR_BASE_URL', {
+      fallbacks: ['VITE_API_BASE_URL'],
+    });
+    if (!legacyBaseUrl) return '';
+    return `${legacyBaseUrl.replace(/\/+$/, '')}/api/DocuSignProcessor`;
+  })();
+const DOCUSIGN_PROCESSOR_CODE =
+  readEnv('DOCUSIGN_PROCESSOR_CODE', {
+    fallbacks: ['DOCUSIGN_FUNCTION_CODE', 'VITE_API_CODE'],
+    defaultValue: '',
+  });
+
+const PRECHECK_ITEM_TTL_MS = Number(process.env.BESTMING_PRECHECK_ITEM_TTL_MS || 10 * 60 * 1000);
+const PRECHECK_MAX_CACHE_ITEMS = Number(process.env.BESTMING_PRECHECK_MAX_CACHE_ITEMS || 10000);
+const PRECHECK_BATCH_SIZE = Math.max(1, Number(process.env.BESTMING_PRECHECK_BATCH_SIZE || 200));
+const precheckCache = new Map();
+
+function precheckKey(declarationId, processfactuurnummer) {
+  return `${declarationId || ''}|${processfactuurnummer || ''}`;
+}
+
+function getCachedPrecheckResult(key) {
+  const cached = precheckCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt < Date.now()) {
+    precheckCache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function setCachedPrecheckResult(key, value) {
+  if (precheckCache.size >= PRECHECK_MAX_CACHE_ITEMS) {
+    const oldestKey = precheckCache.keys().next().value;
+    if (oldestKey) precheckCache.delete(oldestKey);
+  }
+  precheckCache.set(key, {
+    value,
+    expiresAt: Date.now() + PRECHECK_ITEM_TTL_MS,
+  });
+}
+
+function buildDocuSignProcessorUrl() {
+  if (!DOCUSIGN_PROCESSOR_URL) {
+    throw new Error('DOCUSIGN_PROCESSOR_URL is not configured');
+  }
+
+  const base = DOCUSIGN_PROCESSOR_URL.trim();
+  if (!DOCUSIGN_PROCESSOR_CODE) return base;
+  if (base.includes('code=')) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}code=${encodeURIComponent(DOCUSIGN_PROCESSOR_CODE)}`;
+}
+
+async function callDocuSignProcessor(payload) {
+  const url = buildDocuSignProcessorUrl();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = data.error || data.message || `DocuSignProcessor returned status ${response.status}`;
+    const err = new Error(msg);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
+}
+
+async function runBestmingPrecheck(items, options = {}) {
+  const forceFresh = options?.forceFresh === true;
+  const normalizedItems = items
+    .map((item) => ({
+      declaration_id: item?.declaration_id,
+      processfactuurnummer: item?.processfactuurnummer,
+    }))
+    .filter((item) => item.declaration_id != null || item.processfactuurnummer != null);
+
+  const uniqueItemsByKey = new Map();
+  for (const item of normalizedItems) {
+    const key = precheckKey(item.declaration_id, item.processfactuurnummer);
+    if (!uniqueItemsByKey.has(key)) uniqueItemsByKey.set(key, item);
+  }
+
+  const orderedKeys = [...uniqueItemsByKey.keys()];
+  const resultsByKey = new Map();
+  const pending = [];
+
+  for (const key of orderedKeys) {
+    const item = uniqueItemsByKey.get(key);
+    const cached = forceFresh ? null : getCachedPrecheckResult(key);
+    if (cached) {
+      resultsByKey.set(key, cached);
+    } else {
+      pending.push(item);
+    }
+  }
+
+  for (let i = 0; i < pending.length; i += PRECHECK_BATCH_SIZE) {
+    const batch = pending.slice(i, i + PRECHECK_BATCH_SIZE);
+    const response = await callDocuSignProcessor({
+      operation: 'precheck',
+      items: batch,
+    });
+
+    const remoteResults = Array.isArray(response.results) ? response.results : [];
+    for (const entry of remoteResults) {
+      const normalizedEntry = { ...entry };
+      const hasBlobPath = typeof normalizedEntry.blob_path === 'string' && normalizedEntry.blob_path.trim() !== '';
+      if (!hasBlobPath) {
+        normalizedEntry.can_send = false;
+        normalizedEntry.status = 'no_bs_found';
+        normalizedEntry.reason = 'Bestemmingsrapport PDF not found in Blob Storage';
+      }
+
+      if (!normalizedEntry.status && normalizedEntry.can_send === false) {
+        normalizedEntry.status = 'blocked';
+      }
+
+      const key = precheckKey(entry.declaration_id, entry.processfactuurnummer);
+      setCachedPrecheckResult(key, normalizedEntry);
+      resultsByKey.set(key, normalizedEntry);
+    }
+
+    for (const item of batch) {
+      const key = precheckKey(item.declaration_id, item.processfactuurnummer);
+      if (!resultsByKey.has(key)) {
+        resultsByKey.set(key, {
+          declaration_id: item.declaration_id,
+          processfactuurnummer: item.processfactuurnummer,
+          status: 'no_bs_found',
+          can_send: false,
+          reason: 'Bestemmingsrapport PDF not found in Blob Storage',
+        });
+      }
+    }
+  }
+
+  return orderedKeys
+    .map((key) => resultsByKey.get(key))
+    .filter(Boolean);
+}
+
+app.post('/api/fiscal/bestming-precheck', async (req, res) => {
+  try {
+    const incomingItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    const forceRefresh = req.body?.force_refresh === true;
+    if (incomingItems.length === 0) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+    if (incomingItems.length > 1000) {
+      return res.status(400).json({ error: 'Maximum 1000 items per precheck request' });
+    }
+
+    const deduped = [];
+    const seen = new Set();
+    for (const item of incomingItems) {
+      const key = precheckKey(item?.declaration_id, item?.processfactuurnummer);
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(item);
+      }
+    }
+
+    const results = await runBestmingPrecheck(deduped, { forceFresh: forceRefresh });
+    const readyCount = results.filter((r) => r?.can_send).length;
+    const blockedCount = results.length - readyCount;
+
+    res.json({
+      success: true,
+      operation: 'precheck',
+      total: results.length,
+      ready_count: readyCount,
+      blocked_count: blockedCount,
+      results,
+    });
+  } catch (err) {
+    console.error('[bestming-precheck] Error:', err);
+    res.status(err.status || 500).json({
+      error: err.message || 'Failed to run bestming precheck',
+      details: err.data || null,
+    });
+  }
+});
+
+app.post('/api/fiscal/bestming-sign', async (req, res) => {
+  try {
+    const declarationId = req.body?.declaration_id ?? req.body?.id;
+    const processfactuurnummer = req.body?.processfactuurnummer ?? req.body?.processFactuurnummer;
+
+    if (declarationId == null && processfactuurnummer == null) {
+      return res.status(400).json({
+        error: 'declaration_id or processfactuurnummer is required',
+      });
+    }
+
+    const precheckResults = await runBestmingPrecheck([{
+      declaration_id: declarationId,
+      processfactuurnummer,
+    }]);
+    const precheck = precheckResults[0];
+
+    if (!precheck?.can_send) {
+      return res.status(409).json({
+        error: 'Cannot send for signature: recipient email not available',
+        code: 'MISSING_EMAIL',
+        precheck,
+      });
+    }
+
+    const payload = {
+      declaration_id: declarationId,
+      processfactuurnummer,
+      recipient_email: req.body?.recipient_email || precheck?.recipient_email,
+      recipient_name: req.body?.recipient_name || precheck?.recipient_name,
+      signer_function: req.body?.signer_function || precheck?.signer_function,
+      document_name: req.body?.document_name,
+      email_subject: req.body?.email_subject,
+      status: req.body?.status,
+      delete_blob_after_send: req.body?.delete_blob_after_send,
+    };
+
+    const result = await callDocuSignProcessor(payload);
+    const key = precheckKey(declarationId, processfactuurnummer);
+    precheckCache.delete(key);
+
+    res.json({
+      success: true,
+      message: 'Signature request sent',
+      declaration_id: declarationId,
+      processfactuurnummer,
+      docusign: result,
+    });
+  } catch (err) {
+    console.error('[bestming-sign] Error:', err);
+    res.status(err.status || 500).json({
+      error: err.message || 'Failed to send bestming signature request',
+      details: err.data || null,
+    });
   }
 });
 

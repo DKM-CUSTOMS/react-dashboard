@@ -15,9 +15,10 @@ import {
     PenLine,
 
     FileSignature,
-    Settings
+    Settings,
+    Loader2
 } from 'lucide-react';
-import { getBestmingDocs, sendDocuSignRequest } from '../../api/bestmingApi';
+import { getBestmingDocs, sendDocuSignRequest, precheckBestmingSignatures, clearBestmingPrecheckSessionCache } from '../../api/bestmingApi';
 import FiscalSettings from './FiscalSettings';
 
 // ─── Debounce Hook ────────────────────────────────────────────
@@ -70,6 +71,13 @@ const COLUMNS = [
     { key: 'PROCESSFACTUURNUMMER', label: 'PROCESSFACTUURNUMMER', sortable: true, copyable: true, mono: true },
 ];
 
+const SMART_FILTER_OPTIONS = [
+    { key: 'icl', label: 'ICL' },
+    { key: 'no_bs', label: 'No BS' },
+    { key: 'no_email', label: 'No Email' },
+    { key: 'ready_sign', label: 'Ready to Sign' },
+];
+
 // ─── Helpers ──────────────────────────────────────────────────
 const fmtDate = (v) => {
     if (!v) return '—';
@@ -86,6 +94,7 @@ const BestmingSignatures = () => {
     const debouncedSearch = useDebounce(searchInput, 250);
     const [filterFrom, setFilterFrom] = useState('');
     const [filterTo, setFilterTo] = useState('');
+    const [smartFilters, setSmartFilters] = useState(new Set());
 
     const [showSettings, setShowSettings] = useState(false);
 
@@ -101,6 +110,8 @@ const BestmingSignatures = () => {
     // ── DocuSign pending: ref for instant guard + state for re-render ──
     const pendingSignRef = useRef(new Set());          // immediate double-click guard
     const [pendingSignIds, setPendingSignIds] = useState(new Set());
+    const forceNextPrecheckRef = useRef(false);
+    const [isHardRefreshing, setIsHardRefreshing] = useState(false);
 
     const searchRef = useRef(null);
 
@@ -128,6 +139,85 @@ const BestmingSignatures = () => {
         initialDataUpdatedAt: cachedData ? 0 : undefined,
     });
 
+    const precheckItems = useMemo(() => {
+        return rawRows
+            .map((row) => ({
+                declaration_id: row.DECLARATION_ID,
+                processfactuurnummer: row.PROCESSFACTUURNUMMER,
+            }))
+            .filter((item) => item.declaration_id != null || item.processfactuurnummer != null);
+    }, [rawRows]);
+
+    const precheckFingerprint = useMemo(() => {
+        if (precheckItems.length === 0) return 'empty';
+        let hash = 2166136261;
+        let first = '';
+        let last = '';
+        for (let i = 0; i < precheckItems.length; i++) {
+            const item = precheckItems[i];
+            const key = `${item.declaration_id ?? ''}|${item.processfactuurnummer ?? ''}`;
+            if (i === 0) first = key;
+            last = key;
+            for (let j = 0; j < key.length; j++) {
+                hash ^= key.charCodeAt(j);
+                hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+            }
+        }
+        return `${precheckItems.length}:${first}:${last}:${(hash >>> 0).toString(16)}`;
+    }, [precheckItems]);
+
+    const {
+        data: precheckData,
+        isFetching: isPrecheckFetching,
+    } = useQuery({
+        queryKey: ['bestming-precheck', precheckFingerprint, dataUpdatedAt],
+        queryFn: () => {
+            const forceRefresh = forceNextPrecheckRef.current;
+            if (forceRefresh) {
+                forceNextPrecheckRef.current = false;
+            }
+            return precheckBestmingSignatures(precheckItems, { forceRefresh });
+        },
+        enabled: precheckItems.length > 0,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+    });
+
+    const precheckMap = useMemo(() => {
+        const map = new Map();
+        const results = precheckData?.results || [];
+        for (const result of results) {
+            const key = `${result.declaration_id ?? ''}|${result.processfactuurnummer ?? ''}`;
+            map.set(key, result);
+        }
+        return map;
+    }, [precheckData]);
+
+    const getRowSignState = useCallback((row) => {
+        const signKey = `${row.DECLARATION_ID ?? ''}|${row.PROCESSFACTUURNUMMER ?? ''}`;
+        const imp = row.IMPORTERCODE?.trim() || '';
+        const cons = row.FISCALCONSIGNEECODE?.trim() || '';
+        const isMismatched = imp !== cons;
+        const precheckStatus = precheckMap.get(signKey);
+        const hasBlobPath = typeof precheckStatus?.blob_path === 'string' && precheckStatus.blob_path.trim() !== '';
+        const isMissingBs = !!precheckStatus && (!hasBlobPath || ['no_bs_found', 'missing_blob', 'not_found'].includes(precheckStatus?.status));
+        const isMissingEmail = precheckStatus?.status === 'missing_email';
+        const isBlocked = precheckStatus?.can_send === false;
+        const isReadyToSign = !isBlocked && row.MESSAGESTATUS !== 'DELETED';
+
+        return {
+            signKey,
+            isMismatched,
+            isMissingBs,
+            isMissingEmail,
+            isBlocked,
+            isReadyToSign,
+            precheckStatus,
+        };
+    }, [precheckMap]);
+
     // ── Client-Side Filter + Sort ─────────────────────────────
     const rows = useMemo(() => {
         let filtered = rawRows;
@@ -150,6 +240,19 @@ const BestmingSignatures = () => {
             filtered = filtered.filter(r => r.DATEOFACCEPTANCE && new Date(r.DATEOFACCEPTANCE) <= to);
         }
 
+        if (smartFilters.size > 0) {
+            filtered = filtered.filter((row) => {
+                const rowState = getRowSignState(row);
+
+                if (smartFilters.has('icl') && !rowState.isMismatched) return false;
+                if (smartFilters.has('no_bs') && !rowState.isMissingBs) return false;
+                if (smartFilters.has('no_email') && !rowState.isMissingEmail) return false;
+                if (smartFilters.has('ready_sign') && !rowState.isReadyToSign) return false;
+
+                return true;
+            });
+        }
+
         // Sort
         filtered = [...filtered].sort((a, b) => {
             const av = a[sortBy];
@@ -164,15 +267,31 @@ const BestmingSignatures = () => {
         });
 
         return filtered;
-    }, [rawRows, debouncedSearch, filterFrom, filterTo, sortBy, sortOrder]);
+    }, [rawRows, debouncedSearch, filterFrom, filterTo, smartFilters, getRowSignState, sortBy, sortOrder]);
 
-    const hasFilters = searchInput || filterFrom || filterTo;
+    const hasFilters = searchInput || filterFrom || filterTo || smartFilters.size > 0;
 
     // ── Toast ─────────────────────────────────────────────────
     const showToast = useCallback((message, type = 'success') => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3500);
     }, []);
+
+    const handleHardRefresh = useCallback(async () => {
+        if (isHardRefreshing) return;
+        setIsHardRefreshing(true);
+        try {
+            clearBestmingPrecheckSessionCache();
+            forceNextPrecheckRef.current = true;
+            await refetch({ throwOnError: true });
+            showToast('Data refreshed from DB. Rechecking email and BS...', 'success');
+        } catch (err) {
+            forceNextPrecheckRef.current = false;
+            showToast(`Refresh failed: ${err?.message || 'Unknown error'}`, 'error');
+        } finally {
+            setIsHardRefreshing(false);
+        }
+    }, [isHardRefreshing, refetch, showToast]);
 
     // ── Copy Helper ───────────────────────────────────────────
     const handleCopy = useCallback((text, label, flashKey) => {
@@ -198,23 +317,35 @@ const BestmingSignatures = () => {
     const handleDocuSign = useCallback(async (row, e) => {
         e?.stopPropagation();
         const id = row.DECLARATION_ID;
+        const processfactuurnummer = row.PROCESSFACTUURNUMMER;
+        const signKey = `${id ?? ''}|${processfactuurnummer ?? ''}`;
+        const status = precheckMap.get(signKey);
+
+        if (status && status.can_send === false) {
+            showToast(status.reason || 'Missing email. Signature is blocked for this row.', 'error');
+            return;
+        }
 
         // Double-click / concurrent guard
-        if (pendingSignRef.current.has(id)) return;
+        if (pendingSignRef.current.has(signKey)) return;
 
-        pendingSignRef.current.add(id);
-        setPendingSignIds(prev => new Set([...prev, id]));
+        pendingSignRef.current.add(signKey);
+        setPendingSignIds(prev => new Set([...prev, signKey]));
 
         try {
-            await sendDocuSignRequest({ id, principal: row.PRINCIPAL, processFactuurnummer: row.PROCESSFACTUURNUMMER });
+            await sendDocuSignRequest({ id, principal: row.PRINCIPAL, processFactuurnummer: processfactuurnummer });
             showToast(`Signature request sent for Declaration #${id}`, 'success');
         } catch (err) {
+            if (err?.code === 'MISSING_EMAIL') {
+                showToast(err?.precheck?.reason || 'Recipient email is missing. Signature is blocked for this row.', 'error');
+                return;
+            }
             showToast(`Failed to send request: ${err.message}`, 'error');
         } finally {
-            pendingSignRef.current.delete(id);
-            setPendingSignIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+            pendingSignRef.current.delete(signKey);
+            setPendingSignIds(prev => { const n = new Set(prev); n.delete(signKey); return n; });
         }
-    }, [showToast]);
+    }, [showToast, precheckMap]);
 
     // ── Keyboard Navigation ───────────────────────────────────
     useEffect(() => {
@@ -240,7 +371,17 @@ const BestmingSignatures = () => {
         setSearchInput('');
         setFilterFrom('');
         setFilterTo('');
+        setSmartFilters(new Set());
     };
+
+    const toggleSmartFilter = useCallback((key) => {
+        setSmartFilters((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    }, []);
 
     const lastUpdated = dataUpdatedAt
         ? new Date(dataUpdatedAt).toLocaleTimeString()
@@ -287,7 +428,7 @@ const BestmingSignatures = () => {
             <div className="w-full space-y-4">
 
                 {/* ── Header ── */}
-                <div className="flex justify-between items-end">
+                    <div className="flex justify-between items-end">
                     <div>
                         <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 bg-[#714B67]/10 rounded-md flex items-center justify-center">
@@ -303,6 +444,12 @@ const BestmingSignatures = () => {
                                 </p>
                             </div>
                         </div>
+                        {isPrecheckFetching && (
+                            <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-1 rounded-md border border-[#714B67]/15 bg-[#714B67]/5 text-[11px] text-[#714B67]">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>Checking Email and BS availability...</span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Stats pill + Refresh + Settings */}
@@ -321,12 +468,12 @@ const BestmingSignatures = () => {
                             <span>/ {rawRows.length} records</span>
                         </div>
                         <button
-                            onClick={() => refetch()}
-                            disabled={isFetching}
+                            onClick={handleHardRefresh}
+                            disabled={isFetching || isPrecheckFetching || isHardRefreshing}
                             className="p-2.5 text-gray-400 hover:text-[#714B67] hover:bg-gray-100 rounded-md transition-all border border-gray-200 bg-white shadow-sm disabled:opacity-50"
-                            title="Refresh data"
+                            title="Refresh from DB and rerun email/BS search"
                         >
-                            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin text-[#714B67]' : ''}`} />
+                            <RefreshCw className={`w-4 h-4 ${(isFetching || isPrecheckFetching || isHardRefreshing) ? 'animate-spin text-[#714B67]' : ''}`} />
                         </button>
                     </div>
                 </div>
@@ -374,6 +521,28 @@ const BestmingSignatures = () => {
                             title="Acceptance date to"
                             className="px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-[#714B67] focus:border-[#714B67] outline-none cursor-pointer"
                         />
+
+                        <div className="h-4 w-px bg-gray-200 mx-1" />
+
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                            {SMART_FILTER_OPTIONS.map((option) => {
+                                const isActive = smartFilters.has(option.key);
+                                return (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => toggleSmartFilter(option.key)}
+                                        className={`px-2 py-1 rounded text-[11px] border transition-colors ${
+                                            isActive
+                                                ? 'bg-[#714B67] text-white border-[#714B67]'
+                                                : 'bg-white text-gray-600 border-gray-200 hover:border-[#714B67]/40 hover:text-[#714B67]'
+                                        }`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
 
                         <div className="flex-1" />
 
@@ -438,11 +607,21 @@ const BestmingSignatures = () => {
                                 ) : (
                                     rows.map((row, index) => {
                                         const id = row.DECLARATION_ID;
-                                        const isPending = pendingSignIds.has(id);
+                                        const rowState = getRowSignState(row);
+                                        const signKey = rowState.signKey;
+                                        const isPending = pendingSignIds.has(signKey);
                                         const isDeleted = row.MESSAGESTATUS === 'DELETED';
-                                        const imp = row.IMPORTERCODE?.trim() || '';
-                                        const cons = row.FISCALCONSIGNEECODE?.trim() || '';
-                                        const isMismatched = imp !== cons;
+                                        const isMismatched = rowState.isMismatched;
+                                        const precheckStatus = rowState.precheckStatus;
+                                        const isBlocked = rowState.isBlocked;
+                                        const isMissingEmail = rowState.isMissingEmail;
+                                        const isMissingBs = rowState.isMissingBs;
+                                        const signBlockedReason = isBlocked
+                                            ? (precheckStatus?.reason || 'Signature is blocked for this row')
+                                            : '';
+                                        const blockedLabel = isMissingBs
+                                            ? 'No BS'
+                                            : (isMissingEmail ? 'No Email' : 'Blocked');
 
                                         return (
                                             <motion.tr
@@ -552,6 +731,9 @@ const BestmingSignatures = () => {
                                                         row={row}
                                                         isPending={isPending}
                                                         isDeleted={isDeleted}
+                                                        isBlocked={isBlocked}
+                                                        blockedLabel={blockedLabel}
+                                                        blockedReason={signBlockedReason}
                                                         onSign={handleDocuSign}
                                                     />
                                                 </td>
@@ -639,10 +821,26 @@ const CopyCell = ({ value, flashKey, activeKey, onCopy, mono = false, accent = f
 };
 
 // ─── DocuSign Button sub-component ───────────────────────────
-const DocuSignButton = ({ row, isPending, isDeleted, onSign }) => {
+const DocuSignButton = ({ row, isPending, isDeleted, isBlocked, blockedLabel, blockedReason, onSign }) => {
     if (isDeleted) {
         return (
             <span className="text-[10px] text-gray-300 font-medium px-2">Deleted</span>
+        );
+    }
+
+    if (isBlocked) {
+        const isBsBlocked = blockedLabel === 'No BS';
+        return (
+            <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[3px] text-[10px] font-bold border ${
+                    isBsBlocked
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}
+                title={blockedReason || 'Signature is blocked for this row'}
+            >
+                {blockedLabel || 'Blocked'}
+            </span>
         );
     }
 

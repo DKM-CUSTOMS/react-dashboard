@@ -7,6 +7,8 @@ const USE_MOCK = false;
 // ────────────────────────────────────────────────────────────────────────────
 
 const FISCAL_API_BASE = '/api/fiscal';
+const PRECHECK_SESSION_CACHE_KEY = 'BESTMING_PRECHECK_CACHE_V1';
+const PRECHECK_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // ─── Mock Dataset ────────────────────────────────────────────────────────────
 const MOCK_DATA = [
@@ -71,8 +73,8 @@ export async function getBestmingDocs() {
 
 /**
  * Send a DocuSign signature request.
- * Payload: { id, principal, processFactuurnummer }
- * @param {{ id: number, principal: string, processFactuurnummer: number }} payload
+ * Payload: { id/declaration_id, processfactuurnummer/processFactuurnummer }
+ * @param {Object} payload
  * @returns {Promise<Object>}
  */
 export async function sendDocuSignRequest(payload) {
@@ -84,8 +86,133 @@ export async function sendDocuSignRequest(payload) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || `DocuSign request failed: ${response.status}`);
+    const precheckReason = err?.precheck?.reason ? ` (${err.precheck.reason})` : '';
+    const error = new Error(err.error || err.message || `DocuSign request failed: ${response.status}${precheckReason}`);
+    error.code = err.code || null;
+    error.precheck = err.precheck || null;
+    throw error;
   }
 
   return response.json();
+}
+
+function normalizePrecheckItem(item) {
+  return {
+    declaration_id: item?.declaration_id,
+    processfactuurnummer: item?.processfactuurnummer,
+  };
+}
+
+function precheckKey(item) {
+  return `${item?.declaration_id ?? ''}|${item?.processfactuurnummer ?? ''}`;
+}
+
+function loadPrecheckSessionCache() {
+  try {
+    const raw = sessionStorage.getItem(PRECHECK_SESSION_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function savePrecheckSessionCache(cache) {
+  try {
+    sessionStorage.setItem(PRECHECK_SESSION_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
+export function clearBestmingPrecheckSessionCache() {
+  try {
+    sessionStorage.removeItem(PRECHECK_SESSION_CACHE_KEY);
+  } catch {}
+}
+
+/**
+ * Bulk precheck for BestMing rows.
+ * Payload: [{ declaration_id, processfactuurnummer }]
+ * @param {Array<{declaration_id:number|string, processfactuurnummer:number|string}>} items
+ * @param {{forceRefresh?: boolean}} options
+ * @returns {Promise<Object>}
+ */
+export async function precheckBestmingSignatures(items, options = {}) {
+  const forceRefresh = options?.forceRefresh === true;
+  const normalized = items
+    .map(normalizePrecheckItem)
+    .filter((item) => item.declaration_id != null || item.processfactuurnummer != null);
+
+  const dedupedMap = new Map();
+  normalized.forEach((item) => {
+    const key = precheckKey(item);
+    if (!dedupedMap.has(key)) dedupedMap.set(key, item);
+  });
+  const deduped = [...dedupedMap.values()];
+
+  if (deduped.length === 0) {
+    return {
+      success: true,
+      operation: 'precheck',
+      total: 0,
+      ready_count: 0,
+      blocked_count: 0,
+      results: [],
+    };
+  }
+
+  const now = Date.now();
+  const cache = forceRefresh ? {} : loadPrecheckSessionCache();
+  const missing = [];
+  const resultByKey = new Map();
+
+  for (const item of deduped) {
+    const key = precheckKey(item);
+    const cached = cache[key];
+    if (!forceRefresh && cached?.expires_at && cached.expires_at > now && cached.result) {
+      resultByKey.set(key, cached.result);
+    } else {
+      missing.push(item);
+    }
+  }
+
+  if (missing.length > 0) {
+  const response = await fetch(`${FISCAL_API_BASE}/bestming-precheck`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: missing, force_refresh: forceRefresh }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || err.message || `BestMing precheck failed: ${response.status}`);
+  }
+
+    const data = await response.json();
+    const fetchedResults = Array.isArray(data?.results) ? data.results : [];
+    for (const result of fetchedResults) {
+      const key = precheckKey(result);
+      resultByKey.set(key, result);
+      cache[key] = {
+        result,
+        expires_at: now + PRECHECK_CACHE_TTL_MS,
+      };
+    }
+    savePrecheckSessionCache(cache);
+  }
+
+  const mergedResults = deduped
+    .map((item) => resultByKey.get(precheckKey(item)))
+    .filter(Boolean);
+  const readyCount = mergedResults.filter((r) => r?.can_send).length;
+
+  return {
+    success: true,
+    operation: 'precheck',
+    total: mergedResults.length,
+    ready_count: readyCount,
+    blocked_count: mergedResults.length - readyCount,
+    results: mergedResults,
+  };
 }

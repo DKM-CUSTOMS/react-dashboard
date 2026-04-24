@@ -4,9 +4,12 @@ import { monitoringCache } from "../utils/cache.js";
 const CONTAINER_NAME = "document-intelligence";
 
 function getBlobServiceClient() {
-  const connStr = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
+  const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
+  if (!process.env.AZURE_STORAGE_CONNECTION_STRING && process.env.VITE_AZURE_STORAGE_CONNECTION_STRING) {
+    console.warn("[env] Using legacy VITE_AZURE_STORAGE_CONNECTION_STRING for AZURE_STORAGE_CONNECTION_STRING. Please migrate.");
+  }
   if (!connStr) {
-    throw new Error("Missing VITE_AZURE_STORAGE_CONNECTION_STRING environment variable");
+    throw new Error("Missing AZURE_STORAGE_CONNECTION_STRING environment variable");
   }
   return BlobServiceClient.fromConnectionString(connStr);
 }

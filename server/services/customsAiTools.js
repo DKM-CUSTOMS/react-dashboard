@@ -53,8 +53,11 @@ export async function initializeNomenclatureDB() {
 
     console.log("Downloading GN 2026 DB from Azure storage into memory...");
     try {
-        const connStr = process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
-        if (!connStr) throw new Error("Missing VITE_AZURE_STORAGE_CONNECTION_STRING");
+        const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
+        if (!process.env.AZURE_STORAGE_CONNECTION_STRING && process.env.VITE_AZURE_STORAGE_CONNECTION_STRING) {
+            console.warn("[env] Using legacy VITE_AZURE_STORAGE_CONNECTION_STRING for AZURE_STORAGE_CONNECTION_STRING. Please migrate.");
+        }
+        if (!connStr) throw new Error("Missing AZURE_STORAGE_CONNECTION_STRING");
 
         const blobServiceClient = BlobServiceClient.fromConnectionString(connStr);
         const containerClient = blobServiceClient.getContainerClient("document-intelligence");
