@@ -139,9 +139,12 @@ const Sidebar = ({ collapsed, toggle }) => {
       label: 'Monitoring',
       icon: Activity,
       path: '/monitoring/pipelines',
-      allowedRoles: ['developer'],
-      subtitles: [],
-      hasSubmenu: false,
+      allowedRoles: ['developer', 'admin'],
+      subtitles: [
+        { label: 'Pipeline Monitor',    path: '/monitoring/pipelines', allowedRoles: ['developer'] },
+        { label: 'Brain Analytics',     path: '/monitoring/brain' },
+      ],
+      hasSubmenu: true,
     },
   ];
 

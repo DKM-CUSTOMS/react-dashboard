@@ -9,6 +9,7 @@ import syncRoutes from './server/routes/sync.js';
 import declarationRoutes from './server/routes/declarations.js';
 import teamRoutes from './server/routes/teams.js';
 import monitoringRoutes from './server/routes/monitoring.js';
+import dkmBrainRoutes from './server/routes/dkmBrain.js';
 import hrAiRoutes from './server/routes/hrAi.js';
 import customsAiRoutes from './server/routes/customsAi.js';
 import customInstructionsRoutes from './server/routes/customInstructions.js';
@@ -725,6 +726,7 @@ app.use('/api/teams', teamRoutes);
 
 // Pipeline Monitoring API
 app.use('/api/monitoring', monitoringRoutes);
+app.use('/api/dkm-brain', dkmBrainRoutes);
 
 // AI Agent API
 app.use('/api/statistics/ai', hrAiRoutes);

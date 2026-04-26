@@ -18,6 +18,10 @@ import DeclarationsList from './pages/fiscal-representation/DeclarationsList';
 import DocumentRequest from './pages/fiscal-representation/DocumentRequest';
 import BestmingSignatures from './pages/fiscal-representation/BestmingSignatures';
 import PipelineMonitoringPage from './pages/PipelineMonitoringPage.jsx';
+import DkmBrainDashboard from './pages/monitoring/DkmBrainDashboard.jsx';
+import ClientDrilldown from './pages/monitoring/ClientDrilldown.jsx';
+import ShipmentDrilldown from './pages/monitoring/ShipmentDrilldown.jsx';
+import ClientRuleDetail from './pages/monitoring/ClientRuleDetail.jsx';
 import AiChatbotPage from './pages/statistics/AiChatbotPage.jsx';
 import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
 import HrAiCapabilitiesPage from './pages/statistics/HrAiCapabilitiesPage.jsx';
@@ -86,6 +90,10 @@ const router = createBrowserRouter([
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/bestming-signatures', element: withAccess(<BestmingSignatures />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['developer']) },
+      { path: 'monitoring/brain', element: withAccess(<DkmBrainDashboard />, ['developer', 'admin']) },
+      { path: 'monitoring/brain/client/:client_key', element: withAccess(<ClientDrilldown />, ['developer', 'admin']) },
+      { path: 'monitoring/brain/shipment/:shipment_id', element: withAccess(<ShipmentDrilldown />, ['developer', 'admin']) },
+      { path: 'monitoring/brain/client-rules/:client_key', element: withAccess(<ClientRuleDetail />, ['developer', 'admin', 'operator', 'manager']) },
       { path: 'admin/user-roles', element: withAccess(<UserRolesPage />, ['developer']) },
     ],
     errorElement: <NotFound />,
