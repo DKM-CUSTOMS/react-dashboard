@@ -96,13 +96,20 @@ export const MOCK_DECLARATION = {
 };
 
 async function fetchFromStreamliner(declarationId) {
-  const base = process.env.STREAMLINER_BASE_URL;
-  if (!base) return null; // triggers demo mode
+  const url = process.env.STREAMLINER_LOGIC_APP_URL;
+  if (!url) return null; // no URL configured → demo mode
 
-  const res = await fetch(`${base}/api/declarations/${declarationId}`, {
-    headers: { "Authorization": `Bearer ${process.env.STREAMLINER_API_KEY ?? ""}` },
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ declarationId }),
   });
-  if (!res.ok) throw new Error(`Streamliner returned ${res.status} for declaration ${declarationId}`);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Streamliner Logic App returned ${res.status}: ${text}`);
+  }
+
   return res.json();
 }
 

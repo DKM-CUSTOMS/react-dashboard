@@ -27,6 +27,9 @@ import CustomsAiChatbotPage from './pages/statistics/CustomsAiChatbotPage.jsx';
 import HrAiCapabilitiesPage from './pages/statistics/HrAiCapabilitiesPage.jsx';
 import RequireRole from './components/auth/RequireRole';
 import UserRolesPage from './pages/admin/UserRolesPage';
+import FlowsPage from './pages/rules-flows/FlowsPage';
+import FlowBuilderPage from './pages/rules-flows/FlowBuilderPage';
+import RunFlowPage from './pages/rules-flows/RunFlowPage';
 
 const withAccess = (element, allowedRoles) => (
   <RequireRole allowed={allowedRoles}>{element}</RequireRole>
@@ -95,6 +98,11 @@ const router = createBrowserRouter([
       { path: 'monitoring/brain/shipment/:shipment_id', element: withAccess(<ShipmentDrilldown />, ['developer', 'admin']) },
       { path: 'monitoring/brain/client-rules/:client_key', element: withAccess(<ClientRuleDetail />, ['developer', 'admin', 'operator', 'manager']) },
       { path: 'admin/user-roles', element: withAccess(<UserRolesPage />, ['developer']) },
+
+      // Rules & Flows Platform
+      { path: 'rules/flows', element: withAccess(<FlowsPage />, ['admin', 'manager', 'Team Leader', 'Senior']) },
+      { path: 'rules/flows/:flowId/builder', element: withAccess(<FlowBuilderPage />, ['admin', 'manager']) },
+      { path: 'rules/run', element: withAccess(<RunFlowPage />, ['admin', 'manager', 'Team Leader', 'Senior', 'declarant']) },
     ],
     errorElement: <NotFound />,
   },

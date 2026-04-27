@@ -38,47 +38,25 @@ function buildSummary(declaration, fields = []) {
 }
 
 async function callAI(prompt) {
-  // Try Anthropic Claude first
-  if (process.env.ANTHROPIC_API_KEY) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 200,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
-    const data = await res.json();
-    return data.content?.[0]?.text ?? "YES — Declaration appears consistent";
+  if (!process.env.OPENAI_API_KEY) {
+    return "YES — Declaration appears consistent (demo mode — add OPENAI_API_KEY to enable AI checks)";
   }
 
-  // Fall back to OpenAI
-  if (process.env.OPENAI_API_KEY) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 200,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content ?? "YES — Declaration appears consistent";
-  }
-
-  // Demo mode — no AI key configured
-  return "YES — Declaration appears consistent (AI unavailable — add ANTHROPIC_API_KEY or OPENAI_API_KEY to enable)";
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      max_tokens: 200,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "YES — Declaration appears consistent";
 }
 
 export async function runAiPromptStrategy(declaration, config) {
@@ -100,7 +78,7 @@ export async function runAiPromptStrategy(declaration, config) {
     return {
       passed: !fired,
       message: answer,
-      details: { question, ai_response: answer, model_used: process.env.ANTHROPIC_API_KEY ? "claude" : process.env.OPENAI_API_KEY ? "openai" : "demo" },
+      details: { question, ai_response: answer, model_used: process.env.OPENAI_API_KEY ? "gpt-4o-mini" : "demo" },
     };
   } catch (err) {
     return {

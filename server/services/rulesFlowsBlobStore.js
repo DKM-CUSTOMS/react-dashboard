@@ -12,8 +12,14 @@ async function getContainer() {
     process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
   if (!connStr) throw new Error("No Azure storage connection string configured for rules engine");
   const svc = BlobServiceClient.fromConnectionString(connStr);
-  _container = svc.getContainerClient(CONTAINER);
-  await _container.createIfNotExists({ access: "private" });
+  const c = svc.getContainerClient(CONTAINER);
+  try {
+    await c.createIfNotExists();
+  } catch (e) {
+    // 409 = already exists or public-access policy conflict — safe to ignore
+    if (e.statusCode !== 409) throw e;
+  }
+  _container = c; // only cache after successful init
   return _container;
 }
 

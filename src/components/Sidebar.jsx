@@ -13,7 +13,8 @@ import {
   X,
   Landmark,
   Activity,
-  Bot
+  Bot,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -131,6 +132,18 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'Principals', path: '/fiscal/sending' },
         { label: 'DebetNote generator', path: '/fiscal/generate-documents' },
         { label: 'BestMing Signatures', path: '/fiscal/bestming-signatures' },
+      ],
+      hasSubmenu: true,
+    },
+    {
+      id: 'rules-engine',
+      label: 'Rules Engine',
+      icon: ShieldCheck,
+      path: '/rules/flows',
+      allowedRoles: ['admin', 'manager', 'Team Leader', 'Senior', 'declarant'],
+      subtitles: [
+        { label: 'Flows', path: '/rules/flows' },
+        { label: 'Run Checks', path: '/rules/run' },
       ],
       hasSubmenu: true,
     },

@@ -14,6 +14,8 @@ import hrAiRoutes from './server/routes/hrAi.js';
 import customsAiRoutes from './server/routes/customsAi.js';
 import customInstructionsRoutes from './server/routes/customInstructions.js';
 import userRolesRoutes from './server/routes/userRoles.js';
+import rulesFlowsRoutes from './server/routes/rulesFlows.js';
+import { seedIfEmpty } from './server/services/rulesFlowsBlobStore.js';
 import { hydrateAzureCache } from './server/services/hrAiTools.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
@@ -734,6 +736,9 @@ app.use('/api/statistics/customs', customsAiRoutes);
 app.use('/api/ai/instructions', customInstructionsRoutes);
 app.use('/api/user-roles', userRolesRoutes);
 
+// Rules & Flows Platform
+app.use('/api/rules', rulesFlowsRoutes);
+
 // ============================================================
 // Database Debugging Tools (VNet Proxy)
 // ============================================================
@@ -812,4 +817,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await hydrateAzureCache();
+  seedIfEmpty().catch((e) => console.warn('[rules-engine] Seed skipped:', e.message));
 });
