@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { ArrowLeft, Download, AlertTriangle, XCircle, Cpu, FileText, Layers, Hash } from 'lucide-react';
+import { ArrowLeft, Download, AlertTriangle, XCircle, Cpu, FileText, Layers, Hash, Link2 } from 'lucide-react';
 import StatCard from '../../components/monitoring/StatCard';
 import StatusBadge from '../../components/monitoring/StatusBadge';
 import {
@@ -15,6 +15,7 @@ import {
   fmtCostFull, fmtCost, fmtPct, fmtNum, fmtDate,
 } from '../../api/dkmBrainApi';
 import { Package, DollarSign, CheckCircle, AlertTriangle as AT, XCircle as XC } from 'lucide-react';
+import { getClientRulesRoute, getClientRulesStateMeta } from './clientContract';
 
 const SL = ({ children }) => (
   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">{children}</p>
@@ -53,7 +54,7 @@ const ModelUsage = ({ models }) => {
 // ---------------------------------------------------------------------------
 // Review flags breakdown — categorised, no chart
 // ---------------------------------------------------------------------------
-const ReviewFlags = ({ cats, totalShipments }) => {
+const ReviewFlags = ({ cats }) => {
   const { missing = [], model = [], declarant = [] } = cats || {};
   const totalFlags = missing.length + model.length + declarant.length;
   if (totalFlags === 0) return <p className="text-xs text-gray-300">No review flags recorded</p>;
@@ -208,6 +209,8 @@ const ClientDrilldown = () => {
 
   const d = data || {};
   const shipments = d.latest_shipments || [];
+  const clientRulesRoute = getClientRulesRoute(d);
+  const rulesStateMeta = getClientRulesStateMeta(d);
 
   const handleExport = () => exportTableToCsv(
     `client-${client_key}.csv`, shipments,
@@ -229,11 +232,29 @@ const ClientDrilldown = () => {
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-indigo-600 mb-3 transition-colors">
           <ArrowLeft size={15} /> Back
         </button>
-        <h1 className="text-xl font-bold text-gray-900">{d.client_name || client_key}</h1>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {d.domain   && <span className="text-xs bg-gray-100 text-gray-500 rounded-lg px-2 py-0.5">{d.domain}</span>}
-          {!d.is_known && <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-0.5">Domain fallback — no profile match</span>}
-          {d.last_seen && <span className="text-xs text-gray-400">Last seen {fmtDate(d.last_seen)}</span>}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">{d.client_name || client_key}</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {d.domain && <span className="text-xs bg-gray-100 text-gray-500 rounded-lg px-2 py-0.5">{d.domain}</span>}
+              {d.principal && <span className="text-xs bg-slate-100 text-slate-700 rounded-lg px-2 py-0.5">{d.principal}</span>}
+              {(d.client_rules_status || d.source_mode) && (
+                <span className={`text-xs rounded-lg border px-2 py-0.5 ${rulesStateMeta.subtleColor}`}>
+                  {rulesStateMeta.label}
+                </span>
+              )}
+              {!d.is_known && <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-0.5">Domain fallback — no profile match</span>}
+              {d.last_seen && <span className="text-xs text-gray-400">Last seen {fmtDate(d.last_seen)}</span>}
+            </div>
+          </div>
+          {clientRulesRoute && (
+            <button
+              onClick={() => navigate(clientRulesRoute)}
+              className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100"
+            >
+              <Link2 size={12} /> Open client rules
+            </button>
+          )}
         </div>
       </div>
 

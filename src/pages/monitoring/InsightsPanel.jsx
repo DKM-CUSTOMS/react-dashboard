@@ -8,7 +8,8 @@ import {
   CHART_PALETTE, STATUS_COLORS, TOOLTIP_STYLE,
   GRID_PROPS, AXIS_STYLE, BAR_RADIUS_H,
 } from './chartTheme';
-import { fetchBrainInsights, fmtCostFull, fmtCost, fmtTokens, fmtPct, fmtNum, fmtDate } from '../../api/dkmBrainApi';
+import { fetchBrainInsights, fmtCostFull, fmtCost, fmtTokens, fmtPct } from '../../api/dkmBrainApi';
+import { getClientRoute } from './clientContract';
 
 const SectionLabel = ({ children, icon: Icon, color }) => (
   <div className="flex items-center gap-2 mb-4">
@@ -98,7 +99,7 @@ const InsightsPanel = () => {
           <p className="text-xs text-gray-400 mb-3">Clients spending the most with under 60% render rate — best ROI targets for prompt tuning.</p>
           <MiniTable
             rows={d.high_cost_low_success || []}
-            onRowClick={row => navigate(`/monitoring/brain/client/${encodeURIComponent(row.client_key || row.client)}`)}
+            onRowClick={(row) => navigate(getClientRoute(row) || `/monitoring/brain/client/${encodeURIComponent(row.client_key || row.client)}`)}
             cols={[
               { key:'client',         label:'Client',   render: v => <span className="font-medium text-gray-700 truncate max-w-[140px] block">{v}</span> },
               { key:'total_cost_usd', label:'Cost',     right:true, render: v => <span className="font-semibold text-violet-700">{fmtCostFull(v)}</span> },
@@ -113,7 +114,7 @@ const InsightsPanel = () => {
           <p className="text-xs text-gray-400 mb-3">Extractions are nearly right — a rule or prompt tweak could eliminate the reviews entirely.</p>
           <MiniTable
             rows={d.high_review_low_fail || []}
-            onRowClick={row => navigate(`/monitoring/brain/client/${encodeURIComponent(row.client_key || row.client)}`)}
+            onRowClick={(row) => navigate(getClientRoute(row) || `/monitoring/brain/client/${encodeURIComponent(row.client_key || row.client)}`)}
             cols={[
               { key:'client',      label:'Client',  render: v => <span className="font-medium text-gray-700 truncate max-w-[140px] block">{v}</span> },
               { key:'review_rate', label:'Review',  right:true, render: v => <span className="text-amber-600 font-semibold">{fmtPct(v)}</span> },

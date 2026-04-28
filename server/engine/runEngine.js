@@ -102,7 +102,7 @@ async function fetchFromStreamliner(declarationId) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ declarationId }),
+    body: JSON.stringify({ id: Number(declarationId) }),
   });
 
   if (!res.ok) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Search,
@@ -14,7 +14,8 @@ import {
   Landmark,
   Activity,
   Bot,
-  ShieldCheck
+  ShieldCheck,
+  ShipWheel
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -134,6 +135,15 @@ const Sidebar = ({ collapsed, toggle }) => {
         { label: 'BestMing Signatures', path: '/fiscal/bestming-signatures' },
       ],
       hasSubmenu: true,
+    },
+    {
+      id: 'import-release',
+      label: 'Import Release',
+      icon: ShipWheel,
+      path: '/import-release',
+      allowedRoles: ['admin', 'manager', 'Team Leader', 'Senior', 'declarant'],
+      subtitles: [],
+      hasSubmenu: false,
     },
     {
       id: 'rules-engine',

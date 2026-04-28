@@ -60,6 +60,27 @@ function modelUsageToArray(modelUsageObj) {
   }));
 }
 
+const CLIENT_LINK_FIELDS = [
+  "dashboard_client_path",
+  "client_rules_path",
+  "client_registry_path",
+  "client_summary_path",
+];
+
+function pickClientLinks(...sources) {
+  const links = {};
+  for (const field of CLIENT_LINK_FIELDS) {
+    links[field] = null;
+    for (const source of sources) {
+      if (source?.[field]) {
+        links[field] = source[field];
+        break;
+      }
+    }
+  }
+  return links;
+}
+
 // Normalise a recent_run entry from a client dashboard blob into a flat shipment row
 function normalizeRun(run, clientBlob) {
   return {
@@ -78,6 +99,11 @@ function normalizeRun(run, clientBlob) {
     stage:                run.stage,
     item_count:           run.item_count   || 0,
     llm_call_count:       run.llm_call_count || 0,
+    duration_ms:          run.duration_ms || 0,
+    total_tokens:         run.total_tokens || 0,
+    input_tokens:         run.input_tokens || 0,
+    output_tokens:        run.output_tokens || 0,
+    attachment_count:     run.attachment_count || 0,
     total_cost_usd:       run.total_estimated_cost_usd || 0,
     models_used:          run.model_names  || [],
     review_reasons:       run.review_reasons || [],
@@ -130,6 +156,10 @@ export async function getOverviewMetrics(filters = {}) {
     return { error: "dashboard/overview.json not found in container" };
   }
 
+  const clientMetaByKey = new Map(
+    clientBlobs.map((clientBlob) => [clientBlob.client_key, clientBlob])
+  );
+
   // Collect all recent_runs across all client blobs for filter-sensitive metrics
   const allRuns = clientBlobs.flatMap((cb) =>
     (cb.recent_runs || []).map((r) => normalizeRun(r, cb))
@@ -165,6 +195,7 @@ export async function getOverviewMetrics(filters = {}) {
       client_key: c.client_key,
       label: c.client_label || c.client_name || c.client_key,
       value: c.total_estimated_cost_usd || 0,
+      ...pickClientLinks(c, clientMetaByKey.get(c.client_key)),
     }));
 
   // Top clients by review rate (need per-client status_counts)
@@ -177,6 +208,7 @@ export async function getOverviewMetrics(filters = {}) {
         client_key: c.client_key,
         label: c.client_label || c.client_name || c.client_key,
         value: total ? Math.round((reviews / total) * 100) : 0,
+        ...pickClientLinks(c, clientMetaByKey.get(c.client_key)),
       };
     })
     .sort((a, b) => b.value - a.value)
@@ -281,16 +313,33 @@ export async function getOperationsTimeSeries(filters = {}, granularity = "day")
   const buckets = {};
   for (const r of filtered) {
     const key = toDateKey(r.created_at, granularity);
-    if (!buckets[key]) buckets[key] = { date: key, total: 0, rendered: 0, review: 0, failed: 0, cost: 0 };
+    if (!buckets[key]) {
+      buckets[key] = {
+        date: key,
+        total: 0,
+        rendered: 0,
+        review: 0,
+        failed: 0,
+        cost: 0,
+        total_duration_ms: 0,
+        avg_duration_ms: 0,
+      };
+    }
     const b = buckets[key];
     b.total++;
     if (r.status === "rendered")         b.rendered++;
     else if (r.status === "review_required") b.review++;
     else if (r.status === "failed")      b.failed++;
     b.cost += r.total_cost_usd || 0;
+    b.total_duration_ms += r.duration_ms || 0;
   }
 
-  const series = Object.values(buckets).sort((a, b) => a.date.localeCompare(b.date));
+  const series = Object.values(buckets)
+    .map((bucket) => ({
+      ...bucket,
+      avg_duration_ms: bucket.total ? bucket.total_duration_ms / bucket.total : 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
   brainCache.set(cacheKey, series);
   return series;
 }
@@ -427,6 +476,7 @@ export async function getQualityMetrics(filters = {}) {
       fail_count:   counts.failed || 0,
       review_rate:  total ? Math.round(((counts.review_required || 0) / total) * 100) : 0,
       fail_rate:    total ? Math.round(((counts.failed || 0) / total) * 100) : 0,
+      ...pickClientLinks(cb),
     };
   }
 
@@ -485,6 +535,7 @@ export async function getQualityMetrics(filters = {}) {
       fail_count:   cb.status_counts?.failed || 0,
       reasons:      groups,
       total_reasons: Object.values(cb.review_reason_counts || {}).reduce((s, n) => s + n, 0),
+      ...pickClientLinks(cb),
     };
   }).filter(c => c.total_reasons > 0)
     .sort((a, b) => b.total_reasons - a.total_reasons);
@@ -533,6 +584,10 @@ export async function getClientList() {
       : 0,
     status_counts:   cb.status_counts || {},
     regime_breakdown: Object.entries(cb.regime_counts || {}).map(([label, value]) => ({ label, value })),
+    source_mode:     cb.source_mode || null,
+    client_rules_status: cb.client_rules_status || cb.source_mode || null,
+    principal:       cb.principal || null,
+    ...pickClientLinks(cb),
   }));
 
   brainCache.set(cacheKey, result);
@@ -592,6 +647,10 @@ export async function getClientDetail(clientKey) {
     total_tokens:        cb.total_tokens        || 0,
     review_reasons: toSortedTopN(cb.review_reason_counts || {}, 10),
     regime_breakdown: Object.entries(cb.regime_counts || {}).map(([label, value]) => ({ label, value })),
+    source_mode:     cb.source_mode || null,
+    client_rules_status: cb.client_rules_status || cb.source_mode || null,
+    principal:       cb.principal || null,
+    ...pickClientLinks(cb),
     model_breakdown: (() => {
       // prefer model_usage object; fall back to model_names from recent_runs
       let arr = modelUsageToArray(cb.model_usage);
@@ -750,6 +809,7 @@ export async function getInsights() {
         total_cost_usd: cb.total_estimated_cost_usd || 0,
         success_rate:   rendered / total,
         total,
+        ...pickClientLinks(cb),
       };
     })
     .filter((x) => x.success_rate < 0.6)
@@ -769,6 +829,7 @@ export async function getInsights() {
         review_rate: review / total,
         fail_rate:   failed / total,
         total,
+        ...pickClientLinks(cb),
       };
     })
     .filter((x) => x.review_rate > 0.2 && x.fail_rate < 0.1)

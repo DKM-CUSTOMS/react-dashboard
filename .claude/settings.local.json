@@ -12,7 +12,10 @@
       "Bash(grep -r \"LOGIC_APP\\\\|AZURE_STORAGE\\\\|ODOO\" \"/c/Users/Ultrapc/Desktop/Dkm-workspace/react-dashboard\" --include=\"*.js\" ! -path \"*/node_modules/*\" ! -path \"*/.git/*\")",
       "Bash(node -e \"const x = require\\('xlsx-js-style'\\); console.log\\(typeof x.read\\)\")",
       "Bash(npx tsc:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const url = process.env.STREAMLINER_LOGIC_APP_URL; console.log\\('URL length:', url?.length\\); console.log\\('URL:', JSON.stringify\\(url\\)\\);\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const url = process.env.STREAMLINER_LOGIC_APP_URL; console.log\\('URL:', JSON.stringify\\(url\\)\\);\")"
     ]
   }
 }

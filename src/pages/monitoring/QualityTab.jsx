@@ -10,6 +10,7 @@ import {
 } from './chartTheme';
 import { fetchBrainQuality, exportTableToCsv, fmtPct, fmtNum } from '../../api/dkmBrainApi';
 import { Users, AlertTriangle, HelpCircle, Target } from 'lucide-react';
+import { getClientRoute } from './clientContract';
 
 const SectionLabel = ({ children }) => (
   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">{children}</p>
@@ -101,7 +102,7 @@ const QualityTab = ({ filters }) => {
             <tbody>
               {(d.clients_by_review_rate||[]).slice(0,25).map((row,i)=>(
                 <tr key={i} className="border-b border-gray-50 hover:bg-slate-50 cursor-pointer transition-colors"
-                  onClick={()=>navigate(`/monitoring/brain/client/${encodeURIComponent(row.client_key || row.label)}`)}>
+                  onClick={() => navigate(getClientRoute(row) || `/monitoring/brain/client/${encodeURIComponent(row.client_key || row.label)}`)}>
                   <td className="py-3 pr-6 font-medium text-gray-700">{row.label}</td>
                   <td className="py-3 pr-6 text-gray-500">{fmtNum(row.total)}</td>
                   <td className="py-3 pr-6 font-semibold" style={{ color: CHART_PALETTE[2] }}>{fmtNum(row.review_count)}</td>

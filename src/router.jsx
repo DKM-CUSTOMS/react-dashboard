@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+﻿import { createBrowserRouter } from 'react-router-dom';
 import MainLayout from './layout/MainLayout';
 import FlowDashboard from './pages/FlowDashboard';
 import FlowInfo from './pages/FlowInfo';
@@ -30,6 +30,8 @@ import UserRolesPage from './pages/admin/UserRolesPage';
 import FlowsPage from './pages/rules-flows/FlowsPage';
 import FlowBuilderPage from './pages/rules-flows/FlowBuilderPage';
 import RunFlowPage from './pages/rules-flows/RunFlowPage';
+import ImportReleasePage from './pages/import-release/ImportReleasePage.jsx';
+import ImportReleaseSettingsPage from './pages/import-release/ImportReleaseSettingsPage.jsx';
 
 const withAccess = (element, allowedRoles) => (
   <RequireRole allowed={allowedRoles}>{element}</RequireRole>
@@ -40,6 +42,8 @@ const router = createBrowserRouter([
     path: '/',
     element: <MainLayout />,
     children: [
+      { path: 'import-release', element: withAccess(<ImportReleasePage />, ['admin', 'manager', 'Team Leader', 'Senior', 'declarant']) },
+      { path: 'import-release/settings', element: withAccess(<ImportReleaseSettingsPage />, ['admin', 'manager', 'Team Leader', 'Senior']) },
       {
         path: 'uploads/flows',
         element: withAccess(<FlowDashboard />, ['admin', 'manager', 'Team Leader', 'Senior']),

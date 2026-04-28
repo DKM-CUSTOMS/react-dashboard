@@ -33,5 +33,3 @@ export const getAudit = (params = {}) => {
   return req("GET", `/audit${qs ? `?${qs}` : ""}`);
 };
 
-// Seed demo data
-export const seedDemo = () => req("POST", "/seed");

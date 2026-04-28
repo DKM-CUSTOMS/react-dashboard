@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -15,8 +15,10 @@ import customsAiRoutes from './server/routes/customsAi.js';
 import customInstructionsRoutes from './server/routes/customInstructions.js';
 import userRolesRoutes from './server/routes/userRoles.js';
 import rulesFlowsRoutes from './server/routes/rulesFlows.js';
+import importReleaseRoutes from './server/routes/importRelease.js';
 import { seedIfEmpty } from './server/services/rulesFlowsBlobStore.js';
 import { hydrateAzureCache } from './server/services/hrAiTools.js';
+import { startImportReleaseAutomation } from './server/services/importReleaseService.js';
 
 // Load environment variables from .env file natively (Node.js 21.7.0+)
 try {
@@ -369,7 +371,7 @@ app.post('/api/fiscal/generate-documents', async (req, res) => {
   }
 });
 
-// GET - BestMing docs from Logic App (proxy — keeps SAS URL server-side)
+// GET - BestMing docs from Logic App (proxy â€” keeps SAS URL server-side)
 app.get('/api/fiscal/bestming-docs', async (_req, res) => {
   const url = process.env.LOGIC_APP_BESTMING_URL;
   if (!url) {
@@ -738,6 +740,7 @@ app.use('/api/user-roles', userRolesRoutes);
 
 // Rules & Flows Platform
 app.use('/api/rules', rulesFlowsRoutes);
+app.use('/api/import-release', importReleaseRoutes);
 
 // ============================================================
 // Database Debugging Tools (VNet Proxy)
@@ -818,4 +821,6 @@ app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await hydrateAzureCache();
   seedIfEmpty().catch((e) => console.warn('[rules-engine] Seed skipped:', e.message));
+  startImportReleaseAutomation().catch((e) => console.warn('[import-release] Automation startup skipped:', e.message));
 });
+

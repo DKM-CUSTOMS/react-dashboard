@@ -11,6 +11,7 @@ import {
   BAR_RADIUS_H, GRID_PROPS, AXIS_STYLE,
 } from './chartTheme';
 import { fetchBrainOverview, fmtCostFull, fmtCost, fmtPct, fmtNum, fmtTokens } from '../../api/dkmBrainApi';
+import { getClientRoute } from './clientContract';
 
 // ---------------------------------------------------------------------------
 // Shared UI primitives
@@ -19,7 +20,7 @@ import { fetchBrainOverview, fmtCostFull, fmtCost, fmtPct, fmtNum, fmtTokens } f
 const KpiCard = ({ label, value, sub, icon: Icon, gradient }) => (
   <div className={`rounded-2xl p-5 flex items-start gap-4 shadow-sm ${gradient}`}>
     <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-      <Icon size={20} className="text-white" />
+      {React.createElement(Icon, { size: 20, className: 'text-white' })}
     </div>
     <div className="min-w-0">
       <p className="text-xs font-medium text-white/70 uppercase tracking-wider mb-1">{label}</p>
@@ -36,7 +37,7 @@ const StatusBlock = ({ label, count, rate, color, bg, border, icon: Icon }) => (
       <p className="text-3xl font-bold text-gray-900">{fmtNum(count)}</p>
       <p className="text-sm mt-1 font-medium" style={{ color }}>{rate}</p>
     </div>
-    <Icon size={36} style={{ color, opacity: 0.18 }} />
+    {React.createElement(Icon, { size: 36, style: { color, opacity: 0.18 } })}
   </div>
 );
 
@@ -237,7 +238,7 @@ const OverviewTab = ({ filters }) => {
             {topClients.map((c, i) => (
               <div key={i}
                 className="flex items-center gap-4 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => navigate(`/monitoring/brain/client/${encodeURIComponent(c.client_key || c.label)}`)}>
+                onClick={() => navigate(getClientRoute(c) || `/monitoring/brain/client/${encodeURIComponent(c.client_key || c.label)}`)}>
                 <span className="text-xs font-bold text-gray-300 w-5 flex-shrink-0">{String(i + 1).padStart(2,'0')}</span>
                 <span className="flex-1 text-sm font-medium text-gray-700 truncate">{c.label}</span>
                 <div className="w-36 bg-gray-100 rounded-full h-1.5 flex-shrink-0">
