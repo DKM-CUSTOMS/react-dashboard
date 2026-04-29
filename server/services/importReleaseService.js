@@ -322,14 +322,30 @@ function mergeRows(existingRows, incomingRows, source) {
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, appendRowEvent(
-        reconcileRow({ ...incoming, source, created_at: nowIso(), updated_at: nowIso(), last_source_sync_at: nowIso(), last_error: null }),
+        reconcileRow({
+          ...incoming,
+          first_source_message_status: incoming.message_status,
+          source,
+          created_at: nowIso(),
+          updated_at: nowIso(),
+          last_source_sync_at: nowIso(),
+          last_error: null,
+        }),
         'source_added',
         'Declaration added from source feed.',
         { message_status: incoming.message_status, eta: incoming.eta }
       ));
       inserted += 1;
     } else {
-      let next = reconcileRow({ ...existing, ...incoming, source: existing.source || source, created_at: existing.created_at, updated_at: nowIso(), last_source_sync_at: nowIso() });
+      let next = reconcileRow({
+        ...existing,
+        ...incoming,
+        first_source_message_status: existing.first_source_message_status || existing.message_status || incoming.message_status,
+        source: existing.source || source,
+        created_at: existing.created_at,
+        updated_at: nowIso(),
+        last_source_sync_at: nowIso(),
+      });
       const sourceChanges = {};
       for (const field of ['message_status', 'eta', 'bl', 'eori_ship_agent']) {
         if (String(existing[field] || '') !== String(incoming[field] || '')) {
@@ -389,11 +405,15 @@ function hasRuntimeError(row) {
 }
 
 function isPreLodgedQueueRow(row) {
-  return !isDoneRecord(row) && !hasValidationError(row) && Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) === 'PRE-LODGED';
+  return !isDoneRecord(row) && !hasValidationError(row) && Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) !== 'INVALIDATED';
 }
 
 function isNoCrnQueueRow(row) {
   return !isDoneRecord(row) && !hasValidationError(row) && !row.crn && (row.last_irp_status === 'crn_not_found' || row.last_error === 'CRN not found');
+}
+
+function isInvalidatedQueueRow(row) {
+  return !isDoneRecord(row) && !hasValidationError(row) && normalizeStatus(row.tsd_status) === 'INVALIDATED';
 }
 
 function isMrnFoundQueueRow(row) {
@@ -412,8 +432,31 @@ function hasReleaseOutcome(row) {
   return Boolean(row.crn && row.mrn);
 }
 
+function getInitialSourceMessageStatus(row) {
+  const explicit = normalizeStatus(row.first_source_message_status || '');
+  if (explicit) return explicit;
+
+  const history = Array.isArray(row.history) ? row.history : [];
+  const sourceAdded = history.find((event) => String(event?.type || '').toLowerCase() === 'source_added');
+  const addedStatus = normalizeStatus(sourceAdded?.data?.message_status || '');
+  if (addedStatus) return addedStatus;
+
+  const oldestBefore = [...history]
+    .reverse()
+    .find((event) => String(event?.type || '').toLowerCase() === 'source_updated' && event?.data?.message_status?.before);
+  const beforeStatus = normalizeStatus(oldestBefore?.data?.message_status?.before || '');
+  if (beforeStatus) return beforeStatus;
+
+  return normalizeStatus(row.message_status || '');
+}
+
 function isDoneMessageStatus(row) {
-  return DONE_MESSAGE_STATUSES.has(normalizeStatus(row.message_status));
+  if (!DONE_MESSAGE_STATUSES.has(normalizeStatus(row.message_status))) return false;
+  if (row.crn && !row.mrn) return false;
+
+  const originalStatus = getInitialSourceMessageStatus(row);
+  if (originalStatus) return DONE_MESSAGE_STATUSES.has(originalStatus);
+  return false;
 }
 
 function isDoneTsdStatus(row) {
@@ -429,7 +472,7 @@ function isWithinEtaWindow(row) {
 }
 
 function isPreLodgedTrackingRow(row) {
-  return Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) === 'PRE-LODGED';
+  return Boolean(row.crn) && !row.mrn;
 }
 
 function isDoneRecord(row) {
@@ -880,6 +923,7 @@ async function listDossiers({ status = '', search = '', page = 1, pageSize = 50 
   let rows = [...store.rows];
   if (status === 'prelodged') rows = rows.filter(isPreLodgedQueueRow);
   if (status === 'no_crn') rows = rows.filter(isNoCrnQueueRow);
+  if (status === 'invalidated') rows = rows.filter(isInvalidatedQueueRow);
   if (status === 'errors') rows = rows.filter(hasValidationError);
   if (status === 'mrn_found') rows = rows.filter(isMrnFoundQueueRow);
   if (status === 'waiting') rows = rows.filter(isWaitingQueueRow);
@@ -968,9 +1012,13 @@ async function executeRecordAction(id, action) {
       email_suppressed_at: null,
       email_sent_at: null,
       email_last_error: null,
+      last_error: null,
+      last_irp_status: null,
       closed_at: null,
       updated_at: nowIso(),
-    }, 'record_reopened', 'Record reopened manually.'));
+    }, 'record_reopened', 'Record reopened manually.', {
+      cleared: ['manual_done_at', 'email_suppressed_at', 'email_sent_at', 'email_last_error', 'last_error', 'last_irp_status', 'closed_at'],
+    }));
     return { record };
   }
 

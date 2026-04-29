@@ -839,7 +839,7 @@ export default function CustomsAiChatbotPage() {
                         )}
                         <button className={`flex items-center gap-1.5 text-[14px] font-medium transition-colors ${isIncognito ? 'text-[#2d2d2d] hover:text-[#111]' : 'text-[#2d2d2d] hover:text-primary'}`}>
                             <Sparkles size={14} className={isIncognito ? 'text-[#666]' : 'text-primary'} />
-                            EU Customs Desk
+                            Customs Assistant
                             <ChevronDown size={14} className={isIncognito ? 'text-[#999]' : 'text-[#999]'} />
                         </button>
                     </div>

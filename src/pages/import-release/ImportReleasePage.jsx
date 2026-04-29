@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Ban, CheckCircle2, CheckCheck, Mail, RefreshCw, RotateCcw, Search, Settings2, XCircle } from 'lucide-react';
@@ -8,6 +8,7 @@ const tabs = [
   { key: '', label: 'All' },
   { key: 'prelodged', label: 'Pre-lodged' },
   { key: 'no_crn', label: 'No CRN' },
+  { key: 'invalidated', label: 'Invalidated' },
   { key: 'errors', label: 'Errors' },
   { key: 'mrn_found', label: 'MRN Found' },
   { key: 'waiting', label: 'ETA +7' },
@@ -19,8 +20,9 @@ const fmtDateTime = (value) => value ? new Date(value).toLocaleString() : '-';
 const normalizeStatus = (value) => String(value || '').trim().toUpperCase();
 const hasValidationError = (row) => Array.isArray(row.validation_errors) && row.validation_errors.length > 0;
 const hasRuntimeError = (row) => Boolean(!hasValidationError(row) && row.last_error && row.last_error !== 'CRN not found');
-const isPreLodgedQueueRow = (row) => row.record_state !== 'done' && !hasValidationError(row) && Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) === 'PRE-LODGED';
+const isPreLodgedQueueRow = (row) => row.record_state !== 'done' && !hasValidationError(row) && Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) !== 'INVALIDATED';
 const isNoCrnQueueRow = (row) => row.record_state !== 'done' && !hasValidationError(row) && !row.crn && (row.last_irp_status === 'crn_not_found' || row.last_error === 'CRN not found');
+const isInvalidatedQueueRow = (row) => row.record_state !== 'done' && !hasValidationError(row) && normalizeStatus(row.tsd_status) === 'INVALIDATED';
 const isMrnFoundQueueRow = (row) => row.record_state !== 'done' && !hasValidationError(row) && Boolean(row.mrn);
 const isWaitingQueueRow = (row) => row.record_state === 'waiting' && !hasValidationError(row);
 const fmtCooldown = (seconds) => {
@@ -36,6 +38,7 @@ const statusBadge = (row) => {
   if (hasValidationError(row)) return { tone: 'red', label: 'Invalid' };
   if (hasRuntimeError(row)) return { tone: 'red', label: 'Error' };
   if (row.last_irp_status === 'crn_not_found' || row.last_error === 'CRN not found') return { tone: 'amber', label: 'No CRN' };
+  if (normalizeStatus(row.tsd_status) === 'INVALIDATED') return { tone: 'orange', label: 'Invalidated' };
   if (row.record_state === 'waiting') return { tone: 'gray', label: 'Waiting' };
   if (row.tsd_status) return { tone: 'blue', label: row.tsd_status };
   return { tone: 'gray', label: 'Pending' };
@@ -48,8 +51,20 @@ const Badge = ({ children, tone = 'gray' }) => {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     amber: 'bg-amber-50 text-amber-700 border-amber-200',
     red: 'bg-red-50 text-red-700 border-red-200',
+    orange: 'bg-orange-50 text-orange-700 border-orange-200',
   };
   return <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium ${colors[tone]}`}>{children}</span>;
+};
+
+const tabTone = {
+  '': { active: 'bg-[#714B67] text-white', idle: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+  prelodged: { active: 'bg-blue-50 text-blue-700 border border-blue-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-blue-200 hover:text-blue-700' },
+  no_crn: { active: 'bg-amber-50 text-amber-700 border border-amber-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-amber-200 hover:text-amber-700' },
+  invalidated: { active: 'bg-orange-50 text-orange-700 border border-orange-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-orange-200 hover:text-orange-700' },
+  errors: { active: 'bg-red-50 text-red-700 border border-red-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-red-200 hover:text-red-700' },
+  mrn_found: { active: 'bg-green-50 text-green-700 border border-green-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-green-200 hover:text-green-700' },
+  waiting: { active: 'bg-gray-100 text-gray-700 border border-gray-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' },
+  done: { active: 'bg-green-50 text-green-700 border border-green-200', idle: 'bg-white text-gray-700 border border-gray-200 hover:border-green-200 hover:text-green-700' },
 };
 
 const jobSummary = (job) => {
@@ -80,19 +95,38 @@ const compareValues = (left, right, type) => {
   return String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
 };
 
+const PAGE_SIZE = 50;
+
+const buildPageItems = (current, total) => {
+  if (total <= 1) return [1];
+  const items = new Set([1, total, current, current - 1, current + 1]);
+  if (current <= 3) {
+    items.add(2);
+    items.add(3);
+    items.add(4);
+  }
+  if (current >= total - 2) {
+    items.add(total - 1);
+    items.add(total - 2);
+    items.add(total - 3);
+  }
+  return [...items].filter((value) => value >= 1 && value <= total).sort((a, b) => a - b);
+};
+
 export default function ImportReleasePage() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState('prelodged');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [notice, setNotice] = useState(null);
   const [sortBy, setSortBy] = useState('last_irp_check_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedRecordId, setSelectedRecordId] = useState(null);
 
   const dossiers = useQuery({
-    queryKey: ['import-release', status, search],
-    queryFn: () => getImportReleaseDossiers({ status, search, pageSize: 100 }),
-    refetchInterval: 60000,
+    queryKey: ['import-release', status, search, page],
+    queryFn: () => getImportReleaseDossiers({ status, search, page, pageSize: PAGE_SIZE }),
+    staleTime: 30000,
   });
   const recordDetail = useQuery({
     queryKey: ['import-release-record', selectedRecordId],
@@ -120,6 +154,8 @@ export default function ImportReleasePage() {
   });
 
   const rows = dossiers.data?.rows || [];
+  const totalRows = dossiers.data?.total || 0;
+  const pageCount = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
   const jobs = dossiers.data?.meta?.jobs || {};
   const fullJob = jobs.full || null;
   const fullCooldownRemaining = (() => {
@@ -131,11 +167,21 @@ export default function ImportReleasePage() {
   const coolingDown = !runAll.isPending && fullCooldownRemaining > 0;
   const busy = runAll.isPending || Boolean(jobs.full?.running?.startedAt);
 
+  useEffect(() => {
+    setPage(1);
+  }, [status, search]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
   const stats = {
-    total: dossiers.data?.total || 0,
+    shown: rows.length,
+    total: totalRows,
     prelodged: rows.filter(isPreLodgedQueueRow).length,
     waiting: rows.filter(isWaitingQueueRow).length,
     noCrn: rows.filter(isNoCrnQueueRow).length,
+    invalidated: rows.filter(isInvalidatedQueueRow).length,
     errors: rows.filter(hasValidationError).length,
   };
 
@@ -145,12 +191,14 @@ export default function ImportReleasePage() {
       ? `Available in ${fmtCooldown(fullCooldownRemaining)}`
       : 'Refresh now';
 
-  const sortedRows = [...rows].sort((left, right) => {
+  const sortedRows = useMemo(() => [...rows].sort((left, right) => {
     const config = SORTABLE_COLUMNS[sortBy];
     if (!config) return 0;
     const result = compareValues(left[sortBy], right[sortBy], config.type);
     return sortDirection === 'asc' ? result : -result;
-  });
+  }), [rows, sortBy, sortDirection]);
+
+  const pageItems = useMemo(() => buildPageItems(page, pageCount), [page, pageCount]);
 
   const toggleSort = (column) => {
     if (sortBy === column) {
@@ -192,7 +240,11 @@ export default function ImportReleasePage() {
       </div>
 
       <div className="mb-4 grid gap-3 md:grid-cols-4">
-        <div className="rounded-lg border bg-white p-4"><div className="text-xs text-gray-500">Rows in view</div><div className="mt-1 text-2xl font-semibold">{stats.total}</div></div>
+        <div className="rounded-lg border bg-white p-4">
+          <div className="text-xs text-gray-500">Rows shown</div>
+          <div className="mt-1 text-2xl font-semibold">{stats.shown}</div>
+          {stats.total > stats.shown && <div className="mt-1 text-xs text-gray-400">{stats.total} total in filter</div>}
+        </div>
         <div className="rounded-lg border bg-white p-4"><div className="text-xs text-gray-500">Pre-lodged in view</div><div className="mt-1 text-2xl font-semibold">{stats.prelodged}</div></div>
         <div className="rounded-lg border bg-white p-4"><div className="text-xs text-gray-500">ETA +7 in view</div><div className="mt-1 text-2xl font-semibold">{stats.waiting}</div></div>
         <div className="rounded-lg border bg-white p-4"><div className="text-xs text-gray-500">Errors in view</div><div className="mt-1 text-2xl font-semibold">{stats.errors}</div></div>
@@ -208,7 +260,18 @@ export default function ImportReleasePage() {
       <div className="rounded-lg border bg-white">
         <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">
-            {tabs.map((tab) => <button key={tab.key} onClick={() => setStatus(tab.key)} className={`rounded-md px-3 py-1.5 text-sm font-medium ${status === tab.key ? 'bg-[#714B67] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{tab.label}</button>)}
+            {tabs.map((tab) => {
+              const tone = tabTone[tab.key] || tabTone[''];
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setStatus(tab.key)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${status === tab.key ? tone.active : tone.idle}`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
           <div className="relative w-full lg:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -259,6 +322,46 @@ export default function ImportReleasePage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="text-sm text-gray-500">
+            Showing {(page - 1) * PAGE_SIZE + (rows.length ? 1 : 0)}-{(page - 1) * PAGE_SIZE + rows.length} of {totalRows}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page <= 1}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            {pageItems.map((pageItem, index) => {
+              const previous = pageItems[index - 1];
+              const showGap = previous && pageItem - previous > 1;
+              return (
+                <React.Fragment key={pageItem}>
+                  {showGap && <span className="px-1 text-sm text-gray-400">...</span>}
+                  <button
+                    type="button"
+                    onClick={() => setPage(pageItem)}
+                    className={`min-w-9 rounded-md px-3 py-1.5 text-sm ${page === pageItem ? 'bg-[#714B67] text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    {pageItem}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              disabled={page >= pageCount}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 

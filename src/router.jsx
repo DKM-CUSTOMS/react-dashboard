@@ -58,15 +58,15 @@ const router = createBrowserRouter([
       },
       {
         path: 'statistics/performance',
-        element: withAccess(<CustomsDashboard />, ['admin', 'Team Leader']),
+        element: withAccess(<CustomsDashboard />, ['admin', 'developer']),
       },
       {
         path: 'statistics/performance/:username',
-        element: withAccess(<UserPerformanceDashboard />, ['admin', 'Team Leader']),
+        element: withAccess(<UserPerformanceDashboard />, ['admin', 'developer']),
       },
       {
         path: 'statistics/user-management',
-        element: withAccess(<UserManagement />, ['admin', 'Administrator']),
+        element: withAccess(<UserManagement />, ['admin', 'developer']),
       },
       {
         path: 'statistics/ai-chat',
@@ -74,11 +74,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'statistics/ai-guide',
-        element: withAccess(<HrAiCapabilitiesPage />, ['admin', 'manager', 'Team Leader']),
+        element: withAccess(<HrAiCapabilitiesPage />, ['admin', 'developer']),
       },
       {
         path: 'statistics/customs-agent',
-        element: withAccess(<CustomsAiChatbotPage />, ['admin', 'manager', 'Team Leader', 'Administrator', 'Senior']),
+        element: withAccess(<CustomsAiChatbotPage />, ['admin', 'developer']),
       },
       { path: 'settings/profile', element: withAccess(<Profile />, ['authenticated']) },
       {
@@ -97,16 +97,16 @@ const router = createBrowserRouter([
       { path: 'fiscal/generate-documents', element: withAccess(<DocumentRequest />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'fiscal/bestming-signatures', element: withAccess(<BestmingSignatures />, ['admin', 'manager', 'Team Leader', 'Administrator']) },
       { path: 'monitoring/pipelines', element: withAccess(<PipelineMonitoringPage />, ['developer']) },
-      { path: 'monitoring/brain', element: withAccess(<DkmBrainDashboard />, ['developer', 'admin']) },
-      { path: 'monitoring/brain/client/:client_key', element: withAccess(<ClientDrilldown />, ['developer', 'admin']) },
-      { path: 'monitoring/brain/shipment/:shipment_id', element: withAccess(<ShipmentDrilldown />, ['developer', 'admin']) },
-      { path: 'monitoring/brain/client-rules/:client_key', element: withAccess(<ClientRuleDetail />, ['developer', 'admin', 'operator', 'manager']) },
+      { path: 'monitoring/brain', element: withAccess(<DkmBrainDashboard />, ['developer']) },
+      { path: 'monitoring/brain/client/:client_key', element: withAccess(<ClientDrilldown />, ['developer']) },
+      { path: 'monitoring/brain/shipment/:shipment_id', element: withAccess(<ShipmentDrilldown />, ['developer']) },
+      { path: 'monitoring/brain/client-rules/:client_key', element: withAccess(<ClientRuleDetail />, ['developer']) },
       { path: 'admin/user-roles', element: withAccess(<UserRolesPage />, ['developer']) },
 
       // Rules & Flows Platform
-      { path: 'rules/flows', element: withAccess(<FlowsPage />, ['admin', 'manager', 'Team Leader', 'Senior']) },
-      { path: 'rules/flows/:flowId/builder', element: withAccess(<FlowBuilderPage />, ['admin', 'manager']) },
-      { path: 'rules/run', element: withAccess(<RunFlowPage />, ['admin', 'manager', 'Team Leader', 'Senior', 'declarant']) },
+      { path: 'rules/flows', element: withAccess(<FlowsPage />, ['developer']) },
+      { path: 'rules/flows/:flowId/builder', element: withAccess(<FlowBuilderPage />, ['developer']) },
+      { path: 'rules/run', element: withAccess(<RunFlowPage />, ['developer']) },
     ],
     errorElement: <NotFound />,
   },
