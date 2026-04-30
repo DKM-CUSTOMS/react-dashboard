@@ -1,4 +1,4 @@
-﻿const BASE_URL = '/api/import-release';
+const BASE_URL = '/api/import-release';
 
 const request = async (path, options = {}) => {
   const response = await fetch(`${BASE_URL}${path}`, {
@@ -27,4 +27,10 @@ export const getImportReleaseRecord = (id) => request(`/records/${encodeURICompo
 export const sendImportReleaseTestEmail = (to = '') => request('/test-email', { method: 'POST', body: JSON.stringify({ to }) });
 export const runImportReleaseRecordAction = (id, action) => request(`/records/${encodeURIComponent(id)}/action`, { method: 'POST', body: JSON.stringify({ action }) });
 
-
+// IRP session management
+export const getIrpSessionStatus = () => request('/irp-session/status');
+export const refreshIrpSession = () => request('/irp-session/refresh', { method: 'POST' });
+export const startIrpSetupSession = () => request('/irp-session/setup/start', { method: 'POST' });
+export const stopIrpSetupSession = () => request('/irp-session/setup/stop', { method: 'POST' });
+export const sendIrpSetupInput = (event) => request('/irp-session/setup/input', { method: 'POST', body: JSON.stringify(event) });
+export const IRP_SETUP_STREAM_URL = `${BASE_URL}/irp-session/setup/stream`;

@@ -20,20 +20,22 @@ import { seedIfEmpty } from './server/services/rulesFlowsBlobStore.js';
 import { hydrateAzureCache } from './server/services/hrAiTools.js';
 import { startImportReleaseAutomation } from './server/services/importReleaseService.js';
 
-// Load environment variables from .env file natively (Node.js 21.7.0+)
-try {
-  process.loadEnvFile();
-  console.log('Environment variables loaded from .env');
-} catch (e) {
-  // .env file might not exist in production
-  console.log('No .env file found, using system environment variables');
-}
-
-
-
 // Fix __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const envPath = path.join(__dirname, '.env');
+
+// Load environment variables from the project root .env, not process.cwd()
+try {
+  if (fs.existsSync(envPath)) {
+    process.loadEnvFile(envPath);
+    console.log(`Environment variables loaded from ${envPath}`);
+  } else {
+    console.log(`No .env file found at ${envPath}, using system environment variables`);
+  }
+} catch (e) {
+  console.log(`Failed to load environment variables from ${envPath}, using system environment variables`);
+}
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));

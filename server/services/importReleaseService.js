@@ -1,17 +1,340 @@
 import { BlobServiceClient } from '@azure/storage-blob';
 import crypto from 'crypto';
-import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const CONTAINER = 'document-intelligence';
 const STORE_BLOB = 'IMPORT_IRP/dossiers.json';
 const RUNS_BLOB = 'IMPORT_IRP/runs.json';
 const META_BLOB = 'IMPORT_IRP/meta.json';
 const SETTINGS_BLOB = 'IMPORT_IRP/settings.json';
+const HEALTH_BLOB = 'IMPORT_IRP/health.json';
 const TSD_BASE = 'https://api.irp.nxtport.com/irp-bff/v1/tsd';
-const ACTIVE_MESSAGE_STATUSES = new Set(['CREATE', 'DMSREJ', 'DMSCTL']);
 const DONE_MESSAGE_STATUSES = new Set(['DMSCLE']);
-let cachedIrpToken = null;
+
+// =============================================================================
+// IRP AUTH MANAGER
+// Playwright-based, fully automated. No irp.json file required.
+// Uses a persistent browser profile so re-authentication is only needed when
+// the IRP session actually expires (typically every 30+ days), not every hour.
+// Bearer tokens are refreshed automatically in-process 5 minutes before expiry.
+// =============================================================================
+
+// Lazy — PROJECT_ROOT is defined further down but this is only called at runtime.
+function getIrpProfileDir() {
+  const v = process.env.IRP_BROWSER_PROFILE;
+  if (!v) return path.join(PROJECT_ROOT, '.irp-browser-profile');
+  return path.isAbsolute(v) ? v : path.join(PROJECT_ROOT, v);
+}
+
+const IRP_LOGIN_URL = process.env.IRP_LOGIN_URL || 'https://irp.nxtport.com/search';
+
+// Single shared state object — never persisted to disk.
+const irpAuth = {
+  status: 'unknown',      // 'unknown'|'connected'|'needs_setup'|'refreshing'|'setup_active'
+  token: null,            // current bearer token (in memory only)
+  tokenExpiresAt: null,   // ISO string
+  lastRefreshedAt: null,  // ISO string
+  lastError: null,
+  _refreshTimer: null,    // setTimeout handle for next scheduled refresh
+  _refreshLock: null,     // deduplication Promise — prevents concurrent Playwright launches
+  _setupContext: null,    // Playwright BrowserContext while setup is active
+  _setupPage: null,       // Playwright Page while setup is active
+};
+
+/**
+ * Clear the 'full' job cooldown timestamp so the next automation tick is not
+ * blocked.  Called after a successful token refresh so auth errors self-heal
+ * in < 5 minutes rather than waiting a full cooldown cycle.
+ * References readMeta/writeMeta which are hoisted function declarations.
+ */
+async function _resetFullJobCooldown() {
+  try {
+    const meta = await readMeta();
+    if (meta.jobs?.full?.lastFinishedAt) {
+      meta.jobs.full = { ...meta.jobs.full, lastFinishedAt: null };
+      await writeMeta(meta);
+      console.log('[irp-auth] Full job cooldown reset — next tick will run immediately.');
+    }
+  } catch (e) {
+    console.warn('[irp-auth] Could not reset full job cooldown:', e.message);
+  }
+}
+
+/** Returns a safe copy of the auth state for the health endpoint / UI. */
+function getIrpAuthState() {
+  return {
+    status: irpAuth.status,
+    tokenExpiresAt: irpAuth.tokenExpiresAt,
+    lastRefreshedAt: irpAuth.lastRefreshedAt,
+    lastError: irpAuth.lastError,
+    profileDir: getIrpProfileDir(),
+  };
+}
+
+/** True when the in-memory token still has > 5 minutes of life. */
+function isIrpTokenValid() {
+  if (!irpAuth.token || !irpAuth.tokenExpiresAt) return false;
+  return new Date(irpAuth.tokenExpiresAt).getTime() - Date.now() > 5 * 60 * 1000;
+}
+
+/** Store a freshly acquired token and mark the manager as connected. */
+function setIrpToken(token, source) {
+  const payload = decodeJwtPayload(token);
+  const expiresAtMs = payload?.exp ? payload.exp * 1000 : Date.now() + 55 * 60 * 1000;
+  irpAuth.token = token;
+  irpAuth.tokenExpiresAt = new Date(expiresAtMs).toISOString();
+  irpAuth.lastRefreshedAt = new Date().toISOString();
+  irpAuth.status = 'connected';
+  irpAuth.lastError = null;
+  console.log(`[irp-auth] Token set from '${source}'. Expires ${irpAuth.tokenExpiresAt}`);
+}
+
+/** Invalidate the in-memory token (called on 401 responses). */
+function clearIrpToken() {
+  irpAuth.token = null;
+  irpAuth.tokenExpiresAt = null;
+  if (irpAuth.status === 'connected') irpAuth.status = 'unknown';
+}
+
+/**
+ * Exchange the session cookies stored in the persistent browser profile for a
+ * fresh IRP bearer token.  Runs Playwright in headless mode — no display needed.
+ * Deduplicates concurrent callers: if a refresh is already in flight they all
+ * receive the same Promise.
+ */
+async function refreshIrpTokenFromProfile() {
+  if (irpAuth._refreshLock) return irpAuth._refreshLock;
+
+  irpAuth._refreshLock = (async () => {
+    if (irpAuth._refreshTimer) {
+      clearTimeout(irpAuth._refreshTimer);
+      irpAuth._refreshTimer = null;
+    }
+    irpAuth.status = 'refreshing';
+    irpAuth.lastError = null;
+
+    let context = null;
+    try {
+      const { chromium } = await import('playwright');
+      context = await chromium.launchPersistentContext(getIrpProfileDir(), {
+        headless: true,
+        args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'],
+      });
+
+      const cookies = await context.cookies(['https://irp.nxtport.com', 'https://api.irp.nxtport.com']);
+      const sessionCookies = cookies.filter((c) =>
+        ['ASLBSA', 'ASLBSACORS'].includes(c.name) || c.name.includes('next-auth')
+      );
+
+      if (sessionCookies.length === 0) {
+        throw new Error('No IRP session cookies found in the browser profile. Please reconnect via Settings → IRP Connection.');
+      }
+
+      const cookieStr = sessionCookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      const resp = await fetch('https://irp.nxtport.com/api/auth/session', {
+        headers: { Accept: 'application/json', Cookie: cookieStr, 'User-Agent': 'Mozilla/5.0', Referer: IRP_LOGIN_URL },
+      });
+
+      if (!resp.ok) {
+        const expired = resp.status === 401 || resp.status === 403;
+        throw new Error(expired
+          ? `IRP session expired (HTTP ${resp.status}). Please reconnect via Settings → IRP Connection.`
+          : `IRP session endpoint returned HTTP ${resp.status}`
+        );
+      }
+
+      const data = await resp.json();
+      if (!data.idToken) throw new Error('IRP session did not return an idToken.');
+
+      setIrpToken(data.idToken, 'playwright-profile');
+      scheduleIrpTokenRefresh();
+      // Reset the 'full' job cooldown so the next automation tick runs immediately
+      // rather than waiting up to 15 min after auth was fixed.
+      _resetFullJobCooldown().catch(() => {});
+      return true;
+    } catch (error) {
+      irpAuth.status = 'needs_setup';
+      irpAuth.lastError = error.message;
+      console.error(`[irp-auth] Profile refresh failed: ${error.message}`);
+      // Retry in 5 minutes so a transient network error heals automatically.
+      irpAuth._refreshTimer = setTimeout(() => {
+        irpAuth._refreshLock = null;
+        refreshIrpTokenFromProfile();
+      }, 5 * 60 * 1000);
+      return false;
+    } finally {
+      if (context) await context.close().catch(() => {});
+      irpAuth._refreshLock = null;
+    }
+  })();
+
+  return irpAuth._refreshLock;
+}
+
+/** Schedule the next automatic refresh 5 minutes before the current token expires. */
+function scheduleIrpTokenRefresh() {
+  if (irpAuth._refreshTimer) {
+    clearTimeout(irpAuth._refreshTimer);
+    irpAuth._refreshTimer = null;
+  }
+  if (!irpAuth.tokenExpiresAt) return;
+  const expiresAtMs = new Date(irpAuth.tokenExpiresAt).getTime();
+  const delayMs = Math.max(expiresAtMs - Date.now() - 5 * 60 * 1000, 30 * 1000);
+  console.log(`[irp-auth] Next auto-refresh in ${Math.round(delayMs / 60000)} min.`);
+  irpAuth._refreshTimer = setTimeout(refreshIrpTokenFromProfile, delayMs);
+}
+
+/** Called at server startup. Seeds the token from env or profile. */
+async function initIrpAuth() {
+  const envToken = String(process.env.IRP_BEARER_TOKEN || '').replace(/^Bearer\s+/i, '').trim();
+  if (envToken) {
+    setIrpToken(envToken, 'env');
+    scheduleIrpTokenRefresh();
+    return;
+  }
+  console.log('[irp-auth] Initialising from browser profile…');
+  await refreshIrpTokenFromProfile();
+}
+
+// ── Setup session: lets the user log in via an embedded remote browser ──
+
+/**
+ * Start a Playwright browser in headless mode, navigate to the IRP login page,
+ * and mark auth status as 'setup_active'.  The frontend polls screenshots and
+ * forwards click/keyboard events via the /irp-session/setup/* routes.
+ */
+async function startIrpSetupSession() {
+  if (irpAuth._setupContext) return { started: false, reason: 'Setup already active' };
+
+  try {
+    const { chromium } = await import('playwright');
+    const context = await chromium.launchPersistentContext(getIrpProfileDir(), {
+      headless: true,
+      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'],
+      viewport: { width: 1280, height: 800 },
+    });
+    const page = context.pages()[0] || await context.newPage();
+    irpAuth._setupContext = context;
+    irpAuth._setupPage = page;
+    irpAuth.status = 'setup_active';
+
+    await page.goto(IRP_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // If the profile already has a valid session, we may be done immediately.
+    const alreadyConnected = await _tryConnectFromSetupSession();
+    if (alreadyConnected) {
+      await stopIrpSetupSession();
+      return { started: true, alreadyConnected: true };
+    }
+
+    return { started: true, alreadyConnected: false };
+  } catch (error) {
+    irpAuth._setupContext = null;
+    irpAuth._setupPage = null;
+    irpAuth.status = 'needs_setup';
+    return { started: false, error: error.message };
+  }
+}
+
+/** Internal: try to exchange session cookies from the live setup context. */
+async function _tryConnectFromSetupSession() {
+  if (!irpAuth._setupContext) return false;
+  try {
+    const cookies = await irpAuth._setupContext.cookies(['https://irp.nxtport.com', 'https://api.irp.nxtport.com']);
+    const sessionCookies = cookies.filter((c) =>
+      ['ASLBSA', 'ASLBSACORS'].includes(c.name) || c.name.includes('next-auth')
+    );
+    if (sessionCookies.length === 0) return false;
+
+    const cookieStr = sessionCookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    const resp = await fetch('https://irp.nxtport.com/api/auth/session', {
+      headers: { Accept: 'application/json', Cookie: cookieStr, 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    if (!data.idToken) return false;
+
+    setIrpToken(data.idToken, 'playwright-setup');
+    scheduleIrpTokenRefresh();
+    _resetFullJobCooldown().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Stop the setup browser session. */
+async function stopIrpSetupSession() {
+  const context = irpAuth._setupContext;
+  irpAuth._setupContext = null;
+  irpAuth._setupPage = null;
+  if (irpAuth.status === 'setup_active') {
+    irpAuth.status = irpAuth.token ? 'connected' : 'needs_setup';
+  }
+  if (context) await context.close().catch(() => {});
+  return { stopped: true };
+}
+
+/**
+ * Capture a JPEG screenshot of the current setup browser page.
+ * Returns base64 string or null if setup is not active.
+ */
+async function getIrpSetupScreenshot() {
+  if (!irpAuth._setupPage) return null;
+  try {
+    const buf = await irpAuth._setupPage.screenshot({ type: 'jpeg', quality: 75 });
+    return buf.toString('base64');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Forward a user interaction event to the setup browser page.
+ * Supported types: 'click' {x,y}, 'type' {text}, 'key' {key}.
+ * After each event, checks whether the session is now established.
+ */
+async function sendIrpSetupInput(event) {
+  const page = irpAuth._setupPage;
+  if (!page) return { ok: false, error: 'No active setup session' };
+  try {
+    if (event.type === 'click') {
+      await page.mouse.click(Number(event.x), Number(event.y));
+    } else if (event.type === 'type') {
+      await page.keyboard.type(String(event.text || ''));
+    } else if (event.type === 'key') {
+      await page.keyboard.press(String(event.key || ''));
+    }
+    // Short pause so the page can react (login redirect, cookie set, etc.)
+    await new Promise((r) => setTimeout(r, 800));
+    const connected = await _tryConnectFromSetupSession();
+    if (connected) await stopIrpSetupSession();
+    return { ok: true, connected };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+// In-process mutex that serialises all dossiers.json read-modify-write operations.
+// Prevents concurrent source sync and IRP poll from overwriting each other's store changes.
+// IRP API calls (slow network) run outside the lock; only the final store write is held.
+let _storeMutex = Promise.resolve();
+async function withStoreMutex(fn) {
+  let release;
+  const previous = _storeMutex;
+  _storeMutex = new Promise((res) => { release = res; });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 const SOURCE_QUERY = `SELECT d.DECLARATIONID, d.MESSAGESTATUS, d.ARRIVALTRANSPORTIDENTIFICATION, d.CONSIGNMENTINFOEORISHIPAGENT,
     TO_DATE((SELECT vdet.VALUE FROM DEFDATA.VARFIELDS_LINKVALUESDET vdet WHERE vdet.KEY1 = d.DECLARATIONID AND vdet.APPLICATION = 'CUSTOMS' AND vdet.FIELDID = 'ETA'), 'YYYYMMDD') AS ETA,
@@ -42,19 +365,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-function cacheToken(token, source) {
-  const payload = decodeJwtPayload(token);
-  const expiresAtMs = payload?.exp ? payload.exp * 1000 : Date.now() + 30 * 60 * 1000;
-  cachedIrpToken = { token, source, expiresAtMs };
-  return token;
-}
-
-function getCachedToken() {
-  if (!cachedIrpToken?.token) return null;
-  const refreshBeforeMs = Number(process.env.IRP_TOKEN_REFRESH_BEFORE_MS || 2 * 60 * 60 * 1000);
-  if (cachedIrpToken.expiresAtMs - Date.now() <= refreshBeforeMs) return null;
-  return cachedIrpToken.token;
-}
+// (token caching is now handled by the IRP Auth Manager above)
 async function getContainer() {
   if (containerClient) return containerClient;
   const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.VITE_AZURE_STORAGE_CONNECTION_STRING;
@@ -115,6 +426,29 @@ async function writeJsonBlob(name, data) {
 
 function emptyStore() {
   return { version: 1, updatedAt: nowIso(), rows: [] };
+}
+
+function defaultHealthSnapshot() {
+  return {
+    updatedAt: null,
+    sourceReachable: false,
+    sourceDetail: 'Unknown',
+    irpAuthValid: false,
+    irpAuthError: null,
+    irpAuthState: 'unknown',
+    irpAuthDetail: 'Unknown',
+    irpSession: { status: 'unknown', tokenExpiresAt: null, lastRefreshedAt: null, lastError: null },
+    emailConfigured: false,
+    emailDetail: 'Unknown',
+    automationRunning: false,
+    automationDetail: 'Unknown',
+    lastFullRunAt: null,
+    fullJobRunning: false,
+    latestRunStatus: null,
+    latestRunIrpChecked: null,
+    latestRunIrpErrors: null,
+    latestRunIrpCompleted: null,
+  };
 }
 
 function limitHistory(items, max = 100) {
@@ -212,8 +546,19 @@ async function writeImportReleaseSettings(settings) {
   });
 }
 
+function pruneStore(rows) {
+  const retentionDays = Number(process.env.IMPORT_RELEASE_DONE_RETENTION_DAYS || 30);
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    if (row.record_state !== 'done') return true;
+    const ts = row.closed_at || row.updated_at || row.created_at;
+    return !ts || new Date(ts).getTime() >= cutoffMs;
+  });
+}
+
 async function writeStore(store) {
-  await writeJsonBlob(STORE_BLOB, { ...store, updatedAt: nowIso() });
+  const rows = pruneStore(Array.isArray(store.rows) ? store.rows : []);
+  await writeJsonBlob(STORE_BLOB, { ...store, rows, updatedAt: nowIso() });
 }
 
 function cooldownMs(name) {
@@ -228,6 +573,21 @@ async function readMeta() {
 
 async function writeMeta(meta) {
   await writeJsonBlob(META_BLOB, { ...meta, updatedAt: nowIso() });
+}
+
+async function readHealthSnapshot() {
+  return {
+    ...defaultHealthSnapshot(),
+    ...(await readJsonBlob(HEALTH_BLOB, defaultHealthSnapshot())),
+  };
+}
+
+async function writeHealthSnapshot(snapshot) {
+  await writeJsonBlob(HEALTH_BLOB, {
+    ...defaultHealthSnapshot(),
+    ...snapshot,
+    updatedAt: nowIso(),
+  });
 }
 
 function cooldownResponse(name, meta) {
@@ -283,6 +643,30 @@ function toDateOnly(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+function toNumericValue(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const normalized = String(value).trim().replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getNestedValue(object, path) {
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((current, key) => (current == null ? undefined : current[key]), object);
+}
+
+function firstNumericValue(object, paths) {
+  for (const path of paths) {
+    const value = toNumericValue(getNestedValue(object, path));
+    if (value != null) return value;
+  }
+  return null;
+}
+
 function normalizeSourceRow(row) {
   const get = (name) => row[name] ?? row[name.toLowerCase()] ?? row[name.toUpperCase()] ?? '';
   const declarationId = String(get('DECLARATIONID') || get('DossierId')).trim();
@@ -301,6 +685,8 @@ function normalizeSourceRow(row) {
     eta: toDateOnly(get('ETA')),
     n705_references: String(get('N705_REFERENCES') || '').trim(),
     arrival_transport_identification: arrivalTransportIdentification,
+    source_total_gross: toNumericValue(get('TOTAL_GROSS')),
+    source_total_packages: toNumericValue(get('TOTAL_PACKAGES')),
   };
 }
 
@@ -340,14 +726,14 @@ function mergeRows(existingRows, incomingRows, source) {
       let next = reconcileRow({
         ...existing,
         ...incoming,
-        first_source_message_status: existing.first_source_message_status || existing.message_status || incoming.message_status,
+        first_source_message_status: getInitialSourceMessageStatus(existing) || normalizeStatus(incoming.message_status),
         source: existing.source || source,
         created_at: existing.created_at,
         updated_at: nowIso(),
         last_source_sync_at: nowIso(),
       });
       const sourceChanges = {};
-      for (const field of ['message_status', 'eta', 'bl', 'eori_ship_agent']) {
+      for (const field of ['message_status', 'eta', 'bl', 'eori_ship_agent', 'source_total_packages', 'source_total_gross']) {
         if (String(existing[field] || '') !== String(incoming[field] || '')) {
           sourceChanges[field] = { before: existing[field] || null, after: incoming[field] || null };
         }
@@ -404,6 +790,50 @@ function hasRuntimeError(row) {
   return Boolean(!hasValidationError(row) && row.last_error && row.last_error !== 'CRN not found');
 }
 
+function isRetriableIrpErrorMessage(message) {
+  const normalized = String(message || '').toLowerCase();
+  if (!normalized) return false;
+  return [
+    'idtoken',
+    'invalid jwt',
+    'http 401',
+    'fetch failed',
+    'network',
+    'timeout',
+    'econn',
+    'und_err',
+    'session returned http',
+    'no irp token available',
+  ].some((needle) => normalized.includes(needle));
+}
+
+function hasRetriableIrpError(row) {
+  return Boolean(hasRuntimeError(row) && isRetriableIrpErrorMessage(row.last_error));
+}
+
+function getNumericComparisonState(leftValue, rightValue, tolerance = 0) {
+  const left = toNumericValue(leftValue);
+  const right = toNumericValue(rightValue);
+  if (left == null || right == null) return 'pending';
+  return Math.abs(left - right) <= tolerance ? 'match' : 'mismatch';
+}
+
+function needsIrpComparisonRefresh(row) {
+  return Boolean(row.mrn) && (toNumericValue(row.irp_total_packages) == null || toNumericValue(row.irp_total_gross) == null);
+}
+
+function isNeedsCheckQueueRow(row) {
+  return !isDoneRecord(row) && !hasValidationError(row) && row.record_state === 'needs_check';
+}
+
+function isEmailPendingQueueRow(row) {
+  return !isDoneRecord(row)
+    && !hasValidationError(row)
+    && row.record_state === 'email_pending'
+    && Boolean(row.mrn)
+    && !row.email_sent_at;
+}
+
 function isPreLodgedQueueRow(row) {
   return !isDoneRecord(row) && !hasValidationError(row) && Boolean(row.crn) && !row.mrn && normalizeStatus(row.tsd_status) !== 'INVALIDATED';
 }
@@ -416,16 +846,8 @@ function isInvalidatedQueueRow(row) {
   return !isDoneRecord(row) && !hasValidationError(row) && normalizeStatus(row.tsd_status) === 'INVALIDATED';
 }
 
-function isMrnFoundQueueRow(row) {
-  return !isDoneRecord(row) && !hasValidationError(row) && Boolean(row.mrn);
-}
-
 function isWaitingQueueRow(row) {
   return !isDoneRecord(row) && !hasValidationError(row) && row.record_state === 'waiting';
-}
-
-function isActiveMessageStatus(row) {
-  return ACTIVE_MESSAGE_STATUSES.has(normalizeStatus(row.message_status));
 }
 
 function hasReleaseOutcome(row) {
@@ -433,9 +855,6 @@ function hasReleaseOutcome(row) {
 }
 
 function getInitialSourceMessageStatus(row) {
-  const explicit = normalizeStatus(row.first_source_message_status || '');
-  if (explicit) return explicit;
-
   const history = Array.isArray(row.history) ? row.history : [];
   const sourceAdded = history.find((event) => String(event?.type || '').toLowerCase() === 'source_added');
   const addedStatus = normalizeStatus(sourceAdded?.data?.message_status || '');
@@ -447,21 +866,30 @@ function getInitialSourceMessageStatus(row) {
   const beforeStatus = normalizeStatus(oldestBefore?.data?.message_status?.before || '');
   if (beforeStatus) return beforeStatus;
 
-  return normalizeStatus(row.message_status || '');
+  // History is the most reliable source of truth. Only fall back to the persisted field
+  // when there is no lifecycle evidence for the first source status.
+  const explicit = normalizeStatus(row.first_source_message_status || '');
+  if (explicit) return explicit;
+
+  // Return empty string — do NOT fall back to current message_status.
+  // Falling back to the current status caused rows with no history (e.g. migrated data) and
+  // a current DMSCLE status to be silently treated as "was always DMSCLE", making them done
+  // before any IRP check or email was processed.
+  return '';
 }
 
 function isDoneMessageStatus(row) {
   if (!DONE_MESSAGE_STATUSES.has(normalizeStatus(row.message_status))) return false;
-  if (row.crn && !row.mrn) return false;
+  // Once a record has entered the IRP outcome flow (CRN and/or MRN present),
+  // source DMSCLE must not auto-close it anymore. Those rows now belong to the
+  // review/email pipeline and are only closed manually (or via explicit suppress).
+  if (row.crn || row.mrn) return false;
 
   const originalStatus = getInitialSourceMessageStatus(row);
   if (originalStatus) return DONE_MESSAGE_STATUSES.has(originalStatus);
   return false;
 }
 
-function isDoneTsdStatus(row) {
-  return false;
-}
 
 function isWithinEtaWindow(row) {
   if (!row.eta) return true;
@@ -477,7 +905,6 @@ function isPreLodgedTrackingRow(row) {
 
 function isDoneRecord(row) {
   if (isDoneMessageStatus(row)) return true;
-  if (hasReleaseOutcome(row) && row.email_sent_at) return true;
   if (row.manual_done_at) return true;
   if (row.email_suppressed_at) return true;
   return false;
@@ -485,7 +912,6 @@ function isDoneRecord(row) {
 
 function getDoneReason(row) {
   if (isDoneMessageStatus(row)) return 'message_status_dmscle';
-  if (hasReleaseOutcome(row) && row.email_sent_at) return 'release_emailed';
   if (row.manual_done_at) return 'manual_done';
   if (row.email_suppressed_at) return 'email_suppressed';
   return null;
@@ -494,7 +920,11 @@ function getDoneReason(row) {
 function getRecordState(row) {
   if ((row.validation_errors || []).length > 0) return 'error';
   if (isDoneRecord(row)) return 'done';
-  if (!isActiveMessageStatus(row) && !isPreLodgedTrackingRow(row)) return 'inactive';
+  if (Boolean(row.mrn)) {
+    return row.comparison_state === 'match' ? 'email_pending' : 'needs_check';
+  }
+  // All records without MRN are either due (within ETA window) or waiting — never inactive.
+  // Any message status can reach IRP: DMSREG, DEC_DAT, CREATE, DMSREJ, DMSCTL, etc.
   return isWithinEtaWindow(row) ? 'due' : 'waiting';
 }
 
@@ -504,9 +934,24 @@ function reconcileRow(row) {
     message_status: normalizeStatus(row.message_status),
     tsd_status: normalizeStatus(row.tsd_status),
     history: Array.isArray(row.history) ? row.history : [],
+    source_total_gross: toNumericValue(row.source_total_gross ?? row.total_gross),
+    source_total_packages: toNumericValue(row.source_total_packages ?? row.total_packages),
+    irp_total_gross: toNumericValue(row.irp_total_gross),
+    irp_total_packages: toNumericValue(row.irp_total_packages),
   };
+  next.first_source_message_status = getInitialSourceMessageStatus(next) || '';
   next.validation_errors = getLookupValidationErrors(next);
   next.lookup_ready = next.validation_errors.length === 0;
+  next.package_check = getNumericComparisonState(next.source_total_packages, next.irp_total_packages, 0);
+  next.gross_check = getNumericComparisonState(next.source_total_gross, next.irp_total_gross, 0.001);
+  next.comparison_state = !next.mrn
+    ? null
+    : (next.package_check === 'mismatch' || next.gross_check === 'mismatch')
+      ? 'mismatch'
+      : (next.package_check === 'match' && next.gross_check === 'match')
+        ? 'match'
+        : 'pending';
+  next.has_discrepancy = next.comparison_state === 'mismatch';
   next.done_reason = getDoneReason(next);
   next.record_state = getRecordState(next);
   next.stop_checking = next.record_state === 'done' ? 1 : 0;
@@ -520,6 +965,12 @@ async function processPendingEmails(rows) {
   let errors = 0;
 
   for (const row of rows) {
+    // Fast-path: only manually approved release rows are eligible for notification.
+    // Everyone else skips the email path entirely.
+    if (!row.manual_done_at || !row.crn || !row.mrn || row.email_sent_at || row.email_suppressed_at) {
+      updatedRows.push(row);
+      continue;
+    }
     let next = reconcileRow(row);
     if (!shouldSendEmail(next)) {
       updatedRows.push(next);
@@ -558,7 +1009,7 @@ async function processPendingEmails(rows) {
 }
 
 function shouldSendEmail(row) {
-  return Boolean(isActiveMessageStatus(row) && row.crn && row.mrn && !row.email_sent_at);
+  return Boolean(row.manual_done_at && row.crn && row.mrn && !row.email_sent_at && !row.email_suppressed_at);
 }
 
 function escapeHtml(value) {
@@ -625,6 +1076,11 @@ function emailVariableDefinitions() {
     { key: 'eori_ship_agent', label: 'EORI ship agent', description: 'EORI ship agent value.' },
     { key: 'crn', label: 'CRN', description: 'Customs reference number from IRP.' },
     { key: 'mrn', label: 'MRN', description: 'Master reference number from IRP.' },
+    { key: 'source_total_packages', label: 'Source packages', description: 'Package count from the source declaration feed.' },
+    { key: 'source_total_gross', label: 'Source gross', description: 'Gross mass from the source declaration feed.' },
+    { key: 'irp_total_packages', label: 'IRP packages', description: 'Released package count from the IRP TSD response, with write-off fallback if needed.' },
+    { key: 'irp_total_gross', label: 'IRP gross', description: 'Released gross mass from the IRP TSD response, with write-off fallback if needed.' },
+    { key: 'comparison_state', label: 'Comparison state', description: 'Comparison result between source and IRP totals.' },
     { key: 'tsd_status', label: 'TSD status', description: 'Latest TSD status from IRP.' },
     { key: 'clearance_status', label: 'Clearance status', description: 'Latest clearance status from IRP.' },
   ];
@@ -648,6 +1104,11 @@ async function buildEmailPayload(row) {
     eori_ship_agent: row.eori_ship_agent || '',
     crn: row.crn || '',
     mrn: row.mrn || '',
+    source_total_packages: row.source_total_packages ?? '',
+    source_total_gross: row.source_total_gross ?? '',
+    irp_total_packages: row.irp_total_packages ?? '',
+    irp_total_gross: row.irp_total_gross ?? '',
+    comparison_state: row.comparison_state || '',
     tsd_status: row.tsd_status || '',
     clearance_status: row.clearance_status || '',
     signature_html: signatureHtml,
@@ -706,75 +1167,46 @@ async function fetchSourceDeclarations() {
 
 async function syncSource(options = {}) {
   return runJob('source', async () => {
+    // Fetch from Logic App outside the mutex — network call, no store involvement.
     const incoming = await fetchSourceDeclarations();
-    const store = await readStore();
-    const merged = mergeRows(store.rows, incoming, 'logic_app');
-    await writeStore({ ...store, rows: merged.rows });
-    const result = { fetched: incoming.length, inserted: merged.inserted, updated: merged.updated, blob: `${CONTAINER}/${STORE_BLOB}` };
-    if (!options.suppressRunLog) await appendRun({ type: 'source', result });
-    return result;
+    // Acquire mutex only for the read-modify-write so IRP poll writes don't interleave.
+    return withStoreMutex(async () => {
+      const store = await readStore();
+      const merged = mergeRows(store.rows, incoming, 'logic_app');
+      await writeStore({ ...store, rows: merged.rows });
+      const result = { fetched: incoming.length, inserted: merged.inserted, updated: merged.updated, blob: `${CONTAINER}/${STORE_BLOB}` };
+      if (!options.suppressRunLog) await appendRun({ type: 'source', result });
+      return result;
+    });
   }, options);
 }
 
-const parseCookie = (cookie) => Object.fromEntries(String(cookie || '').split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
-  const index = part.indexOf('=');
-  return index === -1 ? [part, ''] : [part.slice(0, index), part.slice(index + 1)];
-}));
-const cookieHeader = (cookies) => Object.entries(cookies).map(([key, value]) => `${key}=${value}`).join('; ');
-
-async function readIrpCaptureAuth() {
-  const filePath = process.env.IRP_CAPTURE_FILE || path.resolve(process.cwd(), 'irp.json');
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    const entries = JSON.parse(raw);
-    if (!Array.isArray(entries)) return {};
-    const bearerEntry = entries.find((entry) => typeof entry.cookie === 'string' && entry.cookie.trim().startsWith('Bearer '));
-    const sessionEntry = entries.find((entry) => typeof entry.cookie === 'string' && entry.cookie.includes('__Secure-next-auth'));
-    return {
-      bearerToken: bearerEntry?.cookie?.trim().replace(/^Bearer\s+/i, '') || null,
-      sessionCookie: sessionEntry?.cookie || null,
-    };
-  } catch (error) {
-    if (error.code === 'ENOENT') return {};
-    throw new Error(`Could not read IRP capture file: ${error.message}`);
-  }
-}
-
-async function getIrpCaptureStatus() {
-  const captured = await readIrpCaptureAuth();
-  const bearerPayload = captured.bearerToken ? decodeJwtPayload(captured.bearerToken) : null;
-  const bearerExpiresAt = bearerPayload?.exp ? new Date(bearerPayload.exp * 1000).toISOString() : null;
-  const refreshBeforeMs = Number(process.env.IRP_TOKEN_REFRESH_BEFORE_MS || 2 * 60 * 60 * 1000);
-  const tokenRemainingMs = bearerPayload?.exp ? (bearerPayload.exp * 1000) - Date.now() : null;
-
-  return {
-    hasBearerCapture: Boolean(captured.bearerToken),
-    hasSessionCookieCapture: Boolean(captured.sessionCookie),
-    bearerExpiresAt,
-    bearerExpired: tokenRemainingMs != null ? tokenRemainingMs <= 0 : null,
-    tokenNearExpiry: tokenRemainingMs != null ? tokenRemainingMs <= refreshBeforeMs : null,
-    captureFile: process.env.IRP_CAPTURE_FILE || 'irp.json',
-  };
-}
+const normalizeBearerToken = (value) => String(value || '').replace(/^Bearer\s+/i, '').trim();
 
 async function getIrpToken(options = {}) {
-  const cached = options.skipCache ? null : getCachedToken();
-  if (cached) return cached;
+  const excluded = normalizeBearerToken(options.excludeBearerToken);
 
-  if (!options.skipBearer && process.env.IRP_BEARER_TOKEN) return cacheToken(process.env.IRP_BEARER_TOKEN, 'env');
+  // Env override: manual bearer token (escape hatch, e.g. for debugging)
+  const envToken = normalizeBearerToken(process.env.IRP_BEARER_TOKEN);
+  if (!options.skipBearer && envToken && envToken !== excluded) return envToken;
 
-  const captured = await readIrpCaptureAuth();
-  const sessionCookie = process.env.IRP_SESSION_COOKIE || captured.sessionCookie;
-  if (sessionCookie) {
-    const response = await fetch('https://irp.nxtport.com/api/auth/session', { headers: { Accept: 'application/json', Cookie: cookieHeader(parseCookie(sessionCookie)), 'User-Agent': 'Mozilla/5.0' } });
-    if (!response.ok) throw new Error(`IRP session returned HTTP ${response.status}`);
-    const data = await response.json();
-    if (!data.idToken) throw new Error('IRP session did not return an idToken');
-    return cacheToken(data.idToken, 'session-cookie');
-  }
-  if (!options.skipBearer && captured.bearerToken) return cacheToken(captured.bearerToken, 'irp.json');
+  // Logic App path: no bearer token needed
   if (process.env.IMPORT_RELEASE_IRP_URL) return null;
-  throw new Error('IRP authentication is not configured. Set IRP_BEARER_TOKEN, IRP_SESSION_COOKIE, IMPORT_RELEASE_IRP_URL, or provide irp.json.');
+
+  // In-memory token (populated by initIrpAuth / refreshIrpTokenFromProfile)
+  if (!options.skipCache && isIrpTokenValid()) {
+    const t = normalizeBearerToken(irpAuth.token);
+    if (!excluded || t !== excluded) return irpAuth.token;
+  }
+
+  // Token missing or near-expiry: refresh from the browser profile
+  await refreshIrpTokenFromProfile();
+  if (isIrpTokenValid()) {
+    const t = normalizeBearerToken(irpAuth.token);
+    if (!excluded || t !== excluded) return irpAuth.token;
+  }
+
+  throw new Error(irpAuth.lastError || 'IRP authentication failed. Please reconnect via Settings → IRP Connection.');
 }
 
 async function checkIrpViaLogicApp(row) {
@@ -788,8 +1220,9 @@ async function irpFetch(pathname, headers, context) {
   const response = await fetch(`${TSD_BASE}${pathname}`, { headers });
   if (response.status !== 401 || context?.retriedAuth) return response;
 
-  cachedIrpToken = null;
-  const freshToken = await getIrpToken({ skipCache: true, skipBearer: true });
+  const failedToken = normalizeBearerToken(headers.Authorization);
+  clearIrpToken();
+  const freshToken = await getIrpToken({ skipCache: true, excludeBearerToken: failedToken });
   if (!freshToken) return response;
   context.retriedAuth = true;
   const retryHeaders = { ...headers, Authorization: `Bearer ${freshToken}` };
@@ -809,9 +1242,10 @@ async function fetchIrpAccountStatus() {
 
   let response = await fetch('https://api.irp.nxtport.com/irp-bff/v1/account', { headers });
   if (response.status === 401) {
-    cachedIrpToken = null;
+    const failedToken = normalizeBearerToken(headers.Authorization);
+    clearIrpToken();
     try {
-      const freshToken = await getIrpToken({ skipCache: true, skipBearer: true });
+      const freshToken = await getIrpToken({ skipCache: true, excludeBearerToken: failedToken });
       if (freshToken) {
         retriedAuth = true;
         response = await fetch('https://api.irp.nxtport.com/irp-bff/v1/account', {
@@ -829,8 +1263,91 @@ async function fetchIrpAccountStatus() {
 
   return { ok: true, retriedAuth };
 }
-async function checkIrpDirect(row) {
-  const token = await getIrpToken();
+
+function extractIrpTotalsFromTsdInfo(info) {
+  const irp_total_packages = firstNumericValue(info, [
+    'numberOfPackages.releasedByCustoms.totalIncluded',
+    'numberOfPackages.releasedByCustoms.total',
+    'numberOfPackages.releasedByCustoms',
+    'releasedByCustoms.packages.totalIncluded',
+    'releasedByCustoms.packages.total',
+    'releasedByCustoms.packages',
+    'writtenOfPackages.totalIncluded',
+    'writtenOffPackages.totalIncluded',
+    'writtenOfPackages.total',
+    'writtenOffPackages.total',
+    'writtenOfPackages',
+    'writtenOffPackages',
+    'packagesReleased',
+    'totalPackagesReleased',
+  ]);
+
+  const irp_total_gross = firstNumericValue(info, [
+    'totalGrossMass.releasedByCustoms.totalIncluded',
+    'totalGrossMass.releasedByCustoms.total',
+    'totalGrossMass.releasedByCustoms',
+    'releasedByCustoms.grossMass.totalIncluded',
+    'releasedByCustoms.grossMass.total',
+    'releasedByCustoms.grossMass',
+    'writtenOffGrossMass.totalIncluded',
+    'writtenOfGrossMass.totalIncluded',
+    'writtenOffGrossMass.total',
+    'writtenOfGrossMass.total',
+    'writtenOffGrossMass',
+    'writtenOfGrossMass',
+    'grossMassReleased',
+    'totalGrossMassReleased',
+  ]);
+
+  return { irp_total_packages, irp_total_gross };
+}
+
+async function fetchIrpWriteOff(crn, headers, authContext) {
+  try {
+    const response = await irpFetch(`/${encodeURIComponent(crn)}/write-off`, headers, authContext);
+    if (response.status === 404) return { irp_total_packages: null, irp_total_gross: null };
+    if (!response.ok) throw new Error(`TSD write-off HTTP ${response.status}`);
+    const payload = await response.json();
+    const packageInfo = payload?.writtenOfPackages || payload?.writtenOffPackages || {};
+    const grossInfo = payload?.writtenOffGrossMass || payload?.writtenOfGrossMass || {};
+    return {
+      irp_total_packages: toNumericValue(packageInfo?.totalIncluded ?? packageInfo),
+      irp_total_gross: toNumericValue(grossInfo?.totalIncluded ?? grossInfo),
+    };
+  } catch (error) {
+    return {
+      irp_total_packages: null,
+      irp_total_gross: null,
+      writeOffError: error.message,
+    };
+  }
+}
+
+async function fetchIrpLspDetails(crn, headers, authContext) {
+  try {
+    const response = await irpFetch(`/${encodeURIComponent(crn)}/lsp-irp`, headers, authContext);
+    if (response.status === 404) return { irp_total_packages: null, irp_total_gross: null };
+    if (!response.ok) throw new Error(`TSD lsp-irp HTTP ${response.status}`);
+    const payload = await response.json();
+    const totals = extractIrpTotalsFromTsdInfo(payload);
+    return {
+      irp_total_packages: totals.irp_total_packages,
+      irp_total_gross: totals.irp_total_gross,
+    };
+  } catch (error) {
+    return {
+      irp_total_packages: null,
+      irp_total_gross: null,
+      lspIrpError: error.message,
+    };
+  }
+}
+
+async function checkIrpDirect(row, options = {}) {
+  if (options.forceFreshAuth) clearIrpToken();
+  const token = options.forceFreshAuth
+    ? await getIrpToken({ skipCache: true })
+    : await getIrpToken();
   if (!token) return checkIrpViaLogicApp(row);
   let crn = row.crn;
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json', 'Active-Role': 'LSP', 'User-Agent': 'Mozilla/5.0' };
@@ -865,78 +1382,236 @@ async function checkIrpDirect(row) {
   const infoResponse = await irpFetch(`/${encodeURIComponent(crn)}`, headers, authContext);
   if (!infoResponse.ok) throw new Error(`TSD lookup HTTP ${infoResponse.status}`);
   const info = await infoResponse.json();
-  return { crn, mrn: info.mrn || null, tsd_status: info.status?.tsd || '', clearance_status: info.status?.clearance || '' };
+  const inlineTotals = extractIrpTotalsFromTsdInfo(info);
+  const hasInlineTotals = inlineTotals.irp_total_packages != null || inlineTotals.irp_total_gross != null;
+  const lspIrpTotals = hasInlineTotals
+    ? { irp_total_packages: null, irp_total_gross: null, lspIrpError: null }
+    : await fetchIrpLspDetails(crn, headers, authContext);
+  const hasLspIrpTotals = lspIrpTotals.irp_total_packages != null || lspIrpTotals.irp_total_gross != null;
+  const shouldFetchWriteOff = !hasInlineTotals && !hasLspIrpTotals;
+  const writeOff = shouldFetchWriteOff
+    ? await fetchIrpWriteOff(crn, headers, authContext)
+    : { irp_total_packages: row.irp_total_packages ?? null, irp_total_gross: row.irp_total_gross ?? null, writeOffError: null };
+  return {
+    crn,
+    mrn: info.mrn || null,
+    tsd_status: info.status?.tsd || '',
+    clearance_status: info.status?.clearance || '',
+    irp_total_packages: inlineTotals.irp_total_packages ?? lspIrpTotals.irp_total_packages ?? writeOff.irp_total_packages,
+    irp_total_gross: inlineTotals.irp_total_gross ?? lspIrpTotals.irp_total_gross ?? writeOff.irp_total_gross,
+    lsp_irp_error: hasInlineTotals ? null : (lspIrpTotals.lspIrpError || null),
+    write_off_error: (hasInlineTotals || hasLspIrpTotals) ? null : (writeOff.writeOffError || null),
+  };
 }
 function shouldCheckIrp(row) {
   if (!row.lookup_ready) return false;
-  if (!isActiveMessageStatus(row) && !isPreLodgedTrackingRow(row)) return false;
   if (isDoneRecord(row)) return false;
+  // Always refresh IRP totals when a row has MRN but missing weight/package data.
+  if (needsIrpComparisonRefresh(row)) return true;
+  // Row already has MRN — no further CRN/MRN lookup needed (unless comparison refresh above).
+  if (Boolean(row.mrn)) return false;
+  // Auth/network errors are always retried so they self-heal once the token is refreshed.
+  if (hasRetriableIrpError(row)) return true;
+  // Any record without MRN within the ETA window is eligible — regardless of message status.
+  // DMSREG, DEC_DAT, CREATE, DMSCTL, DMSREJ, DMSCLE (no CRN/MRN) all need the IRP check.
   return isWithinEtaWindow(row);
 }
 
-async function pollIrp(limit = 50, options = {}) {
+function getIrpCandidatePriority(row) {
+  if (hasRetriableIrpError(row)) return 0;
+  if (needsIrpComparisonRefresh(row)) return 1;
+  if (isPreLodgedTrackingRow(row)) return 2;
+  if (!row.crn) return 3;
+  return 4;
+}
+
+// batchSize: rows processed per batch iteration (env IMPORT_RELEASE_IRP_BATCH_SIZE, default 50).
+// Total rows checked per run is controlled separately by IMPORT_RELEASE_IRP_MAX_PER_RUN (0 = all).
+async function pollIrp(batchSize = 50, options = {}) {
   return runJob('irp', async () => {
     const store = await readStore();
-    const candidates = store.rows.filter(shouldCheckIrp).sort((a, b) => new Date(a.last_irp_check_at || 0) - new Date(b.last_irp_check_at || 0)).slice(0, Number(limit));
+    const resolvedBatchSize = Math.max(1, Number(batchSize) || 50);
+    const eligibleRows = store.rows
+      .filter(shouldCheckIrp)
+      .sort((a, b) => {
+        const priorityDiff = getIrpCandidatePriority(a) - getIrpCandidatePriority(b);
+        if (priorityDiff !== 0) return priorityDiff;
+        return new Date(a.last_irp_check_at || 0) - new Date(b.last_irp_check_at || 0);
+      });
+    const configuredMaxPerRun = Number(options.maxPerRun ?? process.env.IMPORT_RELEASE_IRP_MAX_PER_RUN ?? 0);
+    const maxPerRun = Number.isFinite(configuredMaxPerRun) && configuredMaxPerRun > 0
+      ? configuredMaxPerRun
+      : eligibleRows.length;
+    const candidates = eligibleRows.slice(0, maxPerRun);
     const byId = new Map(store.rows.map((row) => [row.id, row]));
     const results = [];
-    for (const row of candidates) {
-      try {
-        const irp = await checkIrpDirect(row);
-        const next = appendRowEvent(
-          reconcileRow({ ...row, ...irp, last_irp_status: irp.status || 'checked', lookup: irp.lookup || row.lookup || null, last_irp_check_at: nowIso(), last_error: null, updated_at: nowIso() }),
-          'irp_checked',
-          'IRP check completed.',
-          { status: irp.status || 'checked', crn: irp.crn || null, mrn: irp.mrn || null, tsd_status: irp.tsd_status || null }
-        );
-        byId.set(row.id, next);
-        results.push({
-          id: row.id,
-          declarationId: row.declaration_id,
-          status: irp.status || 'checked',
-          crn: next.crn,
-          mrn: next.mrn,
-          tsdStatus: next.tsd_status,
-          emailSentAt: next.email_sent_at || null,
-          emailError: next.email_last_error || null,
-        });
-      } catch (error) {
-        byId.set(row.id, appendRowEvent(
-          reconcileRow({ ...row, last_irp_status: 'error', last_irp_check_at: nowIso(), last_error: error.message, updated_at: nowIso() }),
-          'irp_error',
-          'IRP check failed.',
-          { error: error.message }
-        ));
-        results.push({ id: row.id, declarationId: row.declaration_id, status: 'error', error: error.message });
+    for (let offset = 0; offset < candidates.length; offset += resolvedBatchSize) {
+      const batch = candidates.slice(offset, offset + resolvedBatchSize);
+      for (const row of batch) {
+        try {
+          const irp = await checkIrpDirect(row, { forceFreshAuth: hasRetriableIrpError(row) });
+          const next = appendRowEvent(
+            reconcileRow({ ...row, ...irp, last_irp_status: irp.status || 'checked', lookup: irp.lookup || row.lookup || null, last_irp_check_at: nowIso(), last_error: null, updated_at: nowIso() }),
+            'irp_checked',
+            'IRP check completed.',
+            {
+              status: irp.status || 'checked',
+              crn: irp.crn || null,
+              mrn: irp.mrn || null,
+              tsd_status: irp.tsd_status || null,
+              irp_total_packages: irp.irp_total_packages ?? null,
+              irp_total_gross: irp.irp_total_gross ?? null,
+              write_off_error: irp.write_off_error || null,
+            }
+          );
+          byId.set(row.id, next);
+          results.push({
+            id: row.id,
+            declarationId: row.declaration_id,
+            status: irp.status || 'checked',
+            crn: next.crn,
+            mrn: next.mrn,
+            tsdStatus: next.tsd_status,
+            emailSentAt: next.email_sent_at || null,
+            emailError: next.email_last_error || null,
+          });
+        } catch (error) {
+          const retriable = isRetriableIrpErrorMessage(error.message);
+          byId.set(row.id, appendRowEvent(
+            reconcileRow({ ...row, last_irp_status: 'error', last_irp_check_at: nowIso(), last_error: error.message, updated_at: nowIso() }),
+            'irp_error',
+            'IRP check failed.',
+            { error: error.message, retriable }
+          ));
+          results.push({ id: row.id, declarationId: row.declaration_id, status: 'error', error: error.message, retriable });
+        }
       }
     }
-    const emailProcessing = await processPendingEmails([...byId.values()]);
-    await writeStore({ ...store, rows: emailProcessing.rows });
-    const result = { checked: results.length, emailsSent: emailProcessing.sent, emailErrors: emailProcessing.errors, results, blob: `${CONTAINER}/${STORE_BLOB}` };
-    if (!options.suppressRunLog) await appendRun({ type: 'irp', result });
-    return result;
+    // Reactive: if ≥50% of checked rows returned auth errors, the token is likely stale.
+    // Trigger a background refresh so the next poll succeeds without manual intervention.
+    // Reactive: if ≥50% of checked rows returned auth errors the token is likely stale.
+    // Clear and schedule an immediate background refresh so the next poll succeeds.
+    const authErrors = results.filter((r) => r.status === 'error' && /401|unauthorized|token|auth/i.test(r.error || '')).length;
+    if (results.length > 0 && authErrors / results.length >= 0.5) {
+      console.log(`[irp-auth] Reactive: ${authErrors}/${results.length} auth errors — scheduling immediate token refresh.`);
+      clearIrpToken();
+      refreshIrpTokenFromProfile(); // fire-and-forget; next poll will use the fresh token
+    }
+
+    // Acquire mutex for write-back. Re-read the store so that any source sync that completed
+    // while IRP API calls were in-flight is not overwritten. Merge IRP results on top of the
+    // fresh rows (rows not touched by IRP are taken as-is from the fresh read).
+    return withStoreMutex(async () => {
+      const freshStore = await readStore();
+      const mergedRows = freshStore.rows.map((row) => byId.get(row.id) ?? row);
+      const emailProcessing = await processPendingEmails(mergedRows);
+      await writeStore({ ...freshStore, rows: emailProcessing.rows });
+      const result = {
+        eligible: eligibleRows.length,
+        checked: results.length,
+        batchSize: resolvedBatchSize,
+        batches: results.length > 0 ? Math.ceil(results.length / resolvedBatchSize) : 0,
+        emailsSent: emailProcessing.sent,
+        emailErrors: emailProcessing.errors,
+        results,
+        blob: `${CONTAINER}/${STORE_BLOB}`,
+      };
+      if (!options.suppressRunLog) await appendRun({ type: 'irp', result });
+      return result;
+    });
   }, options);
 }
 
 async function listDossiers({ status = '', search = '', page = 1, pageSize = 50 }) {
   const store = await readStore();
-  let rows = [...store.rows];
+  const allRows = store.rows;
+
+  // Global counts computed before any filter — these power the stats cards in the UI so they
+  // always reflect the full store, not just the current page or active tab.
+  const summary = {
+    total: allRows.length,
+    prelodged: allRows.filter(isPreLodgedQueueRow).length,
+    no_crn: allRows.filter(isNoCrnQueueRow).length,
+    invalidated: allRows.filter(isInvalidatedQueueRow).length,
+    errors: allRows.filter(hasValidationError).length,
+    email_pending: allRows.filter(isEmailPendingQueueRow).length,
+    needs_check: allRows.filter(isNeedsCheckQueueRow).length,
+    waiting: allRows.filter(isWaitingQueueRow).length,
+    done: allRows.filter((row) => row.record_state === 'done').length,
+  };
+
+  let rows = [...allRows];
   if (status === 'prelodged') rows = rows.filter(isPreLodgedQueueRow);
   if (status === 'no_crn') rows = rows.filter(isNoCrnQueueRow);
   if (status === 'invalidated') rows = rows.filter(isInvalidatedQueueRow);
   if (status === 'errors') rows = rows.filter(hasValidationError);
-  if (status === 'mrn_found') rows = rows.filter(isMrnFoundQueueRow);
+  if (status === 'email_pending') rows = rows.filter(isEmailPendingQueueRow);
+  if (status === 'needs_check') rows = rows.filter(isNeedsCheckQueueRow);
   if (status === 'waiting') rows = rows.filter(isWaitingQueueRow);
   if (status === 'done') rows = rows.filter((row) => row.record_state === 'done');
   if (search) {
     const term = search.toLowerCase();
-    rows = rows.filter((row) => [row.declaration_id, row.container_number, row.bl, row.crn, row.mrn].some((value) => String(value || '').toLowerCase().includes(term)));
+    rows = rows.filter((row) => [
+      row.declaration_id,
+      row.container_number,
+      row.bl,
+      row.crn,
+      row.mrn,
+      row.eori_ship_agent,
+      row.eta,
+      row.tsd_status,
+      row.record_state,
+      row.message_status,
+      row.last_irp_status,
+      row.last_error,
+    ].some((value) => String(value || '').toLowerCase().includes(term)));
   }
   rows.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
   const total = rows.length;
   const offset = (Number(page) - 1) * Number(pageSize);
   const meta = await readMeta();
-  return { rows: rows.slice(offset, offset + Number(pageSize)), total, page: Number(page), pageSize: Number(pageSize), blob: `${CONTAINER}/${STORE_BLOB}`, meta };
+  return { rows: rows.slice(offset, offset + Number(pageSize)), total, page: Number(page), pageSize: Number(pageSize), blob: `${CONTAINER}/${STORE_BLOB}`, meta, summary };
+}
+
+function summarizeIrpRun(result = {}) {
+  const results = Array.isArray(result.results) ? result.results : [];
+  const checked = Number(result.checked ?? results.length ?? 0);
+  const errors = results.filter((item) => item?.status === 'error').length;
+  const noCrn = results.filter((item) => item?.status === 'crn_not_found').length;
+  const completed = Math.max(0, checked - errors);
+  return {
+    checked,
+    completed,
+    errors,
+    noCrn,
+  };
+}
+
+function summarizeFullRun(run) {
+  const source = run?.result?.source || {};
+  const irp = summarizeIrpRun(run?.result?.irp || run?.result || {});
+  const emailErrors = Number(run?.result?.irp?.emailErrors ?? run?.result?.emailErrors ?? 0);
+  const hasIssues = Boolean(source.error || irp.errors > 0 || emailErrors > 0);
+  return {
+    id: run.id,
+    type: run.type,
+    startedAt: run.startedAt,
+    sourceFetched: source.fetched ?? null,
+    sourceInserted: source.inserted ?? null,
+    sourceUpdated: source.updated ?? null,
+    sourceError: source.error ?? null,
+    irpChecked: irp.checked,
+    irpCompleted: irp.completed,
+    irpErrors: irp.errors,
+    irpNoCrn: irp.noCrn,
+    emailsSent: run?.result?.irp?.emailsSent ?? run?.result?.emailsSent ?? null,
+    emailErrors,
+    skipped: run?.result?.skipped === true || run?.skipped === true,
+    reason: run?.result?.reason || run?.reason || null,
+    status: run?.result?.skipped === true || run?.skipped === true
+      ? 'skipped'
+      : (hasIssues ? 'issue' : 'completed'),
+  };
 }
 
 async function listRuns({ limit = 50 } = {}) {
@@ -945,20 +1620,7 @@ async function listRuns({ limit = 50 } = {}) {
     runs: runs
       .filter((run) => String(run.type || '').toLowerCase() === 'full')
       .slice(0, Number(limit))
-      .map((run) => ({
-      id: run.id,
-      type: run.type,
-      startedAt: run.startedAt,
-      sourceFetched: run.result?.source?.fetched ?? null,
-      sourceInserted: run.result?.source?.inserted ?? null,
-      sourceUpdated: run.result?.source?.updated ?? null,
-      sourceError: run.result?.source?.error ?? null,
-      irpChecked: run.result?.irp?.checked ?? run.result?.checked ?? null,
-      emailsSent: run.result?.irp?.emailsSent ?? run.result?.emailsSent ?? null,
-      emailErrors: run.result?.irp?.emailErrors ?? run.result?.emailErrors ?? null,
-      skipped: run.result?.skipped === true || run.skipped === true,
-      reason: run.result?.reason || run.reason || null,
-    })),
+      .map(summarizeFullRun),
   };
 }
 
@@ -1009,7 +1671,8 @@ async function executeRecordAction(id, action) {
     const record = await updateRecordById(id, async (row) => appendRowEvent({
       ...row,
       manual_done_at: null,
-      email_suppressed_at: null,
+      // email_suppressed_at is intentionally kept: suppression is an explicit opt-out that
+      // survives reopen. If the user also wants email sent they must use resend_email after.
       email_sent_at: null,
       email_last_error: null,
       last_error: null,
@@ -1017,17 +1680,47 @@ async function executeRecordAction(id, action) {
       closed_at: null,
       updated_at: nowIso(),
     }, 'record_reopened', 'Record reopened manually.', {
-      cleared: ['manual_done_at', 'email_suppressed_at', 'email_sent_at', 'email_last_error', 'last_error', 'last_irp_status', 'closed_at'],
+      cleared: ['manual_done_at', 'email_sent_at', 'email_last_error', 'last_error', 'last_irp_status', 'closed_at'],
     }));
     return { record };
   }
 
   if (normalized === 'mark_done') {
-    const record = await updateRecordById(id, async (row) => appendRowEvent({
-      ...row,
-      manual_done_at: nowIso(),
-      updated_at: nowIso(),
-    }, 'record_done', 'Record marked done manually.'));
+    const record = await updateRecordById(id, async (row) => {
+      const markedAt = nowIso();
+      let next = {
+        ...row,
+        manual_done_at: markedAt,
+        updated_at: markedAt,
+      };
+
+      if (row.crn && row.mrn && !row.email_sent_at && !row.email_suppressed_at) {
+        try {
+          const emailPayload = await sendNotificationEmail(next);
+          next = appendRowEvent({
+            ...next,
+            email_sent_at: nowIso(),
+            email_last_error: null,
+            email_to: emailPayload.to || '',
+            email_cc: emailPayload.cc || '',
+            email_subject: emailPayload.subject || '',
+            updated_at: nowIso(),
+          }, 'email_sent', 'Notification email sent.', {
+            to: emailPayload.to || '',
+            cc: emailPayload.cc || '',
+            subject: emailPayload.subject || '',
+          });
+        } catch (error) {
+          next = appendRowEvent({
+            ...next,
+            email_last_error: error.message,
+            updated_at: nowIso(),
+          }, 'email_error', 'Notification email failed.', { error: error.message });
+        }
+      }
+
+      return appendRowEvent(next, 'record_done', 'Record marked done manually.');
+    });
     return { record };
   }
 
@@ -1069,74 +1762,72 @@ async function sendTestImportReleaseEmail(toOverride = '') {
 
 async function getImportReleaseHealth() {
   const meta = await readMeta();
-  const sourceJob = meta.jobs?.source || {};
   const fullJob = meta.jobs?.full || {};
   const irpJob = meta.jobs?.irp || {};
-  const captureStatus = await getIrpCaptureStatus();
+  const previousSnapshot = await readHealthSnapshot();
+  const irpSession = getIrpAuthState();
+  const recentRuns = await readJsonBlob(RUNS_BLOB, []);
+  const latestFullRun = recentRuns.find((run) => String(run.type || '').toLowerCase() === 'full');
+  const latestFullSummary = latestFullRun ? summarizeFullRun(latestFullRun) : null;
+  const sourceConfigured = Boolean(process.env.IMPORT_RELEASE_SOURCE_URL) || latestFullSummary?.sourceFetched != null || previousSnapshot.sourceReachable;
+  const emailConfigured = Boolean(process.env.IMPORT_RELEASE_EMAIL_URL) || previousSnapshot.emailConfigured;
+  const automationEnabled = process.env.IMPORT_RELEASE_AUTOMATION_ENABLED
+    ? process.env.IMPORT_RELEASE_AUTOMATION_ENABLED !== '0'
+    : (Boolean(latestFullRun) || previousSnapshot.automationRunning);
 
-  let irpAuthValid = false;
-  let irpAuthError = null;
-
+  // Derive IRP connection validity from in-memory state + recent runtime results.
   const fullIrpResult = fullJob?.lastResult?.irp;
-  const irpResult = irpJob?.lastResult;
+  const irpJobResult = irpJob?.lastResult;
   const recentRuntimeSuccess =
     (fullIrpResult && Number(fullIrpResult.checked || 0) > 0 && Number(fullIrpResult.results?.filter?.((r) => r.status === 'error').length || 0) < Number(fullIrpResult.checked || 0)) ||
-    (irpResult && Number(irpResult.checked || 0) > 0 && Number(irpResult.results?.filter?.((r) => r.status === 'error').length || 0) < Number(irpResult.checked || 0));
+    (irpJobResult && Number(irpJobResult.checked || 0) > 0 && Number(irpJobResult.results?.filter?.((r) => r.status === 'error').length || 0) < Number(irpJobResult.checked || 0)) ||
+    (latestFullSummary && latestFullSummary.irpChecked > 0 && latestFullSummary.irpErrors < latestFullSummary.irpChecked);
 
-  if (recentRuntimeSuccess) {
-    irpAuthValid = true;
-  } else {
-    const irpAuth = await fetchIrpAccountStatus();
-    irpAuthValid = irpAuth.ok;
-    irpAuthError = irpAuth.ok ? null : irpAuth.error;
+  let irpAuthValid = irpSession.status === 'connected' || recentRuntimeSuccess;
+  let irpAuthError = null;
+
+  if (!irpAuthValid) {
+    const accountCheck = await fetchIrpAccountStatus();
+    irpAuthValid = accountCheck.ok;
+    irpAuthError = accountCheck.ok ? null : accountCheck.error;
   }
 
-  const irpAuthState = irpAuthValid
-    ? (captureStatus.tokenNearExpiry ? 'expiring' : 'connected')
-    : 'manual_refresh_required';
-  const irpAuthDetail = irpAuthValid
-    ? (
-      captureStatus.hasSessionCookieCapture
-        ? 'Connected through the saved trusted profile session'
-        : (captureStatus.tokenNearExpiry ? 'Connected, session refresh recommended soon' : 'Connected')
-    )
-    : 'Session refresh required from a trusted local browser profile';
-  const sessionWindowLabel = captureStatus.hasSessionCookieCapture
-    ? 'Trusted profile session in use'
-    : (captureStatus.bearerExpiresAt ? 'Captured bearer token window' : 'No token window available');
-  const sessionWindowDetail = captureStatus.hasSessionCookieCapture
-    ? (
-      captureStatus.bearerExpiresAt
-        ? `The saved browser session is active. The last captured bearer token was issued for a window ending ${new Date(captureStatus.bearerExpiresAt).toLocaleString()}.`
-        : 'The saved browser session is active.'
-    )
-    : (
-      captureStatus.bearerExpiresAt
-        ? `Captured bearer token expires ${new Date(captureStatus.bearerExpiresAt).toLocaleString()}.`
-        : 'No token expiry available.'
-    );
+  const tokenNearExpiry = irpSession.tokenExpiresAt
+    ? new Date(irpSession.tokenExpiresAt).getTime() - Date.now() < 10 * 60 * 1000
+    : false;
 
-  return {
-    sourceReachable: Boolean(process.env.IMPORT_RELEASE_SOURCE_URL) && !sourceJob?.lastError,
+  const irpAuthStateLabel = irpAuthValid
+    ? (tokenNearExpiry ? 'expiring' : 'connected')
+    : (irpSession.status === 'setup_active' ? 'setup_active' : 'needs_setup');
+
+  const irpAuthDetail = irpAuthValid
+    ? (tokenNearExpiry ? 'Connected — token refreshing soon' : 'Connected via browser profile session')
+    : (irpSession.status === 'setup_active'
+      ? 'Setup in progress — complete login in Settings → IRP Connection'
+      : (irpAuthError || 'Session expired — reconnect via Settings → IRP Connection'));
+
+  const snapshot = {
+    sourceReachable: sourceConfigured,
+    sourceDetail: sourceConfigured ? 'Configured' : 'Missing configuration',
     irpAuthValid,
     irpAuthError,
-    irpAuthState,
+    irpAuthState: irpAuthStateLabel,
     irpAuthDetail,
-    irpCapture: captureStatus,
-    sessionWindowLabel,
-    sessionWindowDetail,
-    emailConfigured: Boolean(process.env.IMPORT_RELEASE_EMAIL_URL),
-    automationRunning: process.env.IMPORT_RELEASE_AUTOMATION_ENABLED !== '0',
-    lastFullRunAt: fullJob?.lastFinishedAt || null,
+    irpSession,                          // replaces old irpCapture / irpRefresh
+    emailConfigured,
+    emailDetail: emailConfigured ? 'Configured' : 'Missing configuration',
+    automationRunning: automationEnabled,
+    automationDetail: fullJob?.running?.startedAt ? 'Running' : (automationEnabled ? 'Enabled' : 'Disabled'),
+    lastFullRunAt: fullJob?.lastFinishedAt || latestFullRun?.startedAt || previousSnapshot.lastFullRunAt || null,
     fullJobRunning: Boolean(fullJob?.running?.startedAt),
-    localRefreshProcedure: [
-      'Open the trusted local Dashboard project folder.',
-      'Run npm run irp:auth.',
-      'If Chromium opens, let the saved profile load IRP and complete login only if requested.',
-      'Wait for irp.json to refresh, then redeploy or sync the updated auth file.',
-      'Return here and confirm IRP Auth shows connected.',
-    ],
+    latestRunStatus: latestFullSummary?.status || null,
+    latestRunIrpChecked: latestFullSummary?.irpChecked ?? null,
+    latestRunIrpErrors: latestFullSummary?.irpErrors ?? null,
+    latestRunIrpCompleted: latestFullSummary?.irpCompleted ?? null,
   };
+
+  await writeHealthSnapshot(snapshot);
+  return snapshot;
 }
 
 
@@ -1151,6 +1842,11 @@ async function startImportReleaseAutomation() {
     console.log('[import-release] Automation disabled.');
     return;
   }
+
+  // Boot the IRP auth manager. It loads the browser profile, exchanges cookies
+  // for a bearer token, and schedules automatic refresh before token expiry.
+  // This runs in the background — automation starts immediately without waiting.
+  initIrpAuth().catch((err) => console.error('[irp-auth] Init error:', err.message));
 
   const intervalMs = Number(process.env.IMPORT_RELEASE_AUTOMATION_INTERVAL_MS || 5 * 60 * 1000);
 
@@ -1178,7 +1874,7 @@ async function runFullSync(options = {}) {
     } catch (error) {
       source = { skipped: true, error: error.message };
     }
-    const irp = await pollIrp(Number(process.env.IMPORT_RELEASE_POLL_LIMIT || 50), { force: true, suppressRunLog: true });
+    const irp = await pollIrp(Number(process.env.IMPORT_RELEASE_IRP_BATCH_SIZE || 50), { force: true, suppressRunLog: true });
     const result = { source, irp };
     await appendRun({ type: 'full', result });
     return result;
@@ -1206,4 +1902,4 @@ async function updateImportReleaseSettings(input) {
   return getImportReleaseSettings();
 }
 
-export { SOURCE_QUERY, clearImportReleaseMeta, executeRecordAction, getImportReleaseHealth, getImportReleaseSettings, getRecordDetails, listDossiers, listRuns, pollIrp, runFullSync, sendTestImportReleaseEmail, startImportReleaseAutomation, syncSource, updateImportReleaseSettings };
+export { SOURCE_QUERY, clearImportReleaseMeta, executeRecordAction, getImportReleaseHealth, getImportReleaseSettings, getIrpAuthState, getRecordDetails, getIrpSetupScreenshot, listDossiers, listRuns, pollIrp, runFullSync, sendIrpSetupInput, sendTestImportReleaseEmail, startImportReleaseAutomation, startIrpSetupSession, stopIrpSetupSession, syncSource, refreshIrpTokenFromProfile, updateImportReleaseSettings };

@@ -1,8 +1,9 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  AlertCircle,
   AlertTriangle,
   Bold,
   CheckCircle2,
@@ -11,15 +12,31 @@ import {
   List,
   ListOrdered,
   Mail,
+  Monitor,
   Redo2,
+  RefreshCw,
   Save,
   Send,
   Settings2,
   Underline,
   Undo2,
   Variable,
+  Wifi,
+  WifiOff,
+  X,
 } from 'lucide-react';
-import { getImportReleaseHealth, getImportReleaseRuns, getImportReleaseSettings, sendImportReleaseTestEmail, updateImportReleaseSettings } from '../../api/importReleaseApi';
+import {
+  getImportReleaseHealth,
+  getImportReleaseRuns,
+  getImportReleaseSettings,
+  IRP_SETUP_STREAM_URL,
+  refreshIrpSession,
+  sendImportReleaseTestEmail,
+  sendIrpSetupInput,
+  startIrpSetupSession,
+  stopIrpSetupSession,
+  updateImportReleaseSettings,
+} from '../../api/importReleaseApi';
 
 const SAMPLE_VALUES = {
   declaration_id: '257979',
@@ -121,6 +138,203 @@ const RichTextEditor = forwardRef(function RichTextEditor({ label, value, onChan
   );
 });
 
+// =============================================================================
+// IRP Connection Tab — embedded remote browser for setup + live status
+// =============================================================================
+
+const STATUS_STYLES = {
+  connected:    'border-green-200 bg-green-50 text-green-800',
+  refreshing:   'border-amber-200 bg-amber-50 text-amber-800',
+  setup_active: 'border-blue-200 bg-blue-50 text-blue-800',
+  needs_setup:  'border-red-200 bg-red-50 text-red-800',
+  unknown:      'border-gray-200 bg-gray-50 text-gray-700',
+};
+
+function IrpConnectionTab({ health, onRefreshHealth, irpRefreshMutation, irpSetupStartMutation, irpSetupStopMutation }) {
+  const session = health?.irpSession || {};
+  const isSetupActive = session.status === 'setup_active';
+  const isConnected = session.status === 'connected';
+  const imgRef = useRef(null);
+  const [screenshot, setScreenshot] = useState(null);
+  const [streamConnected, setStreamConnected] = useState(false);
+
+  // SSE screenshot stream — only active while setup is running
+  useEffect(() => {
+    if (!isSetupActive) { setScreenshot(null); setStreamConnected(false); return; }
+    const es = new EventSource(IRP_SETUP_STREAM_URL);
+    es.onopen = () => setStreamConnected(true);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.screenshot) setScreenshot(data.screenshot);
+        if (data.state?.status !== 'setup_active') {
+          es.close();
+          onRefreshHealth();
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => setStreamConnected(false);
+    return () => es.close();
+  }, [isSetupActive, onRefreshHealth]);
+
+  // Forward click events to the remote browser
+  const handleBrowserClick = useCallback(async (e) => {
+    if (!imgRef.current) return;
+    const rect = imgRef.current.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left) * (1280 / rect.width));
+    const y = Math.round((e.clientY - rect.top) * (800 / rect.height));
+    await sendIrpSetupInput({ type: 'click', x, y });
+  }, []);
+
+  // Forward keyboard events to the remote browser
+  const [inputValue, setInputValue] = useState('');
+  const handleInputKey = useCallback(async (e) => {
+    if (e.key === 'Enter') {
+      await sendIrpSetupInput({ type: 'key', key: 'Enter' });
+      setInputValue('');
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      await sendIrpSetupInput({ type: 'key', key: 'Tab' });
+    } else if (e.key === 'Backspace') {
+      await sendIrpSetupInput({ type: 'key', key: 'Backspace' });
+    }
+  }, []);
+  const handleInputChange = useCallback(async (e) => {
+    const lastChar = e.target.value.slice(-1);
+    setInputValue(e.target.value);
+    if (lastChar) await sendIrpSetupInput({ type: 'type', text: lastChar });
+  }, []);
+
+  const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES.unknown;
+
+  return (
+    <div className="space-y-4">
+      {/* Status banner */}
+      <div className={`rounded-lg border px-5 py-4 ${statusStyle}`}>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {isConnected
+              ? <Wifi size={20} />
+              : session.status === 'needs_setup'
+                ? <WifiOff size={20} />
+                : <RefreshCw size={20} className={session.status === 'refreshing' ? 'animate-spin' : ''} />}
+            <div>
+              <div className="font-semibold capitalize">{session.status?.replace(/_/g, ' ') || 'Unknown'}</div>
+              <div className="text-sm opacity-80">{health?.irpAuthDetail || '—'}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isSetupActive && (
+              <button
+                type="button"
+                onClick={() => irpRefreshMutation.mutate()}
+                disabled={irpRefreshMutation.isPending || session.status === 'refreshing'}
+                className="inline-flex items-center gap-1.5 rounded-md border border-current/30 bg-white/60 px-3 py-1.5 text-xs font-medium hover:bg-white/80 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={irpRefreshMutation.isPending ? 'animate-spin' : ''} />
+                Refresh Token
+              </button>
+            )}
+            {!isSetupActive && (
+              <button
+                type="button"
+                onClick={() => irpSetupStartMutation.mutate()}
+                disabled={irpSetupStartMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#714B67] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#5a3c52] disabled:opacity-50"
+              >
+                <Monitor size={12} />
+                {isConnected ? 'Re-authenticate' : 'Connect to IRP'}
+              </button>
+            )}
+            {isSetupActive && (
+              <button
+                type="button"
+                onClick={() => irpSetupStopMutation.mutate()}
+                disabled={irpSetupStopMutation.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md border border-current/30 bg-white/60 px-3 py-1.5 text-xs font-medium hover:bg-white/80"
+              >
+                <X size={12} />
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+        {session.tokenExpiresAt && (
+          <div className="mt-2 text-xs opacity-70">
+            Token expires: {new Date(session.tokenExpiresAt).toLocaleString()}
+            {session.lastRefreshedAt && ` · Last refreshed: ${new Date(session.lastRefreshedAt).toLocaleString()}`}
+          </div>
+        )}
+        {session.lastError && (
+          <div className="mt-2 text-xs font-medium opacity-80">{session.lastError}</div>
+        )}
+      </div>
+
+      {/* Remote browser view — only shown during setup */}
+      {isSetupActive && (
+        <div className="rounded-lg border bg-white overflow-hidden">
+          <div className="flex items-center justify-between border-b px-4 py-2 text-sm text-gray-700">
+            <div className="flex items-center gap-2">
+              <Monitor size={14} />
+              <span className="font-medium">IRP Login Browser</span>
+              {streamConnected
+                ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Live</span>
+                : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Connecting…</span>}
+            </div>
+            <span className="text-xs text-gray-400">Click inside the browser view to interact</span>
+          </div>
+
+          {/* Screenshot canvas */}
+          <div className="relative bg-gray-900">
+            {screenshot
+              ? (
+                <img
+                  ref={imgRef}
+                  src={`data:image/jpeg;base64,${screenshot}`}
+                  alt="IRP browser"
+                  className="block w-full cursor-pointer"
+                  onClick={handleBrowserClick}
+                  draggable={false}
+                />
+              )
+              : (
+                <div className="flex h-64 items-center justify-center text-gray-500 text-sm">
+                  <RefreshCw size={16} className="mr-2 animate-spin" />
+                  Loading browser…
+                </div>
+              )}
+          </div>
+
+          {/* Keyboard input relay */}
+          <div className="border-t bg-gray-50 px-4 py-3">
+            <div className="text-xs text-gray-500 mb-1.5">Type here to send keystrokes to the browser:</div>
+            <input
+              type="text"
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKey}
+              placeholder="Click the browser above or type here…"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Info when not in setup */}
+      {!isSetupActive && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600 space-y-2">
+          <div className="font-medium text-gray-800">How it works</div>
+          <p>The dashboard uses a persistent Playwright browser profile to maintain your IRP session. Once connected, bearer tokens are refreshed automatically every hour — no manual steps needed.</p>
+          <p>If the session expires (typically after 30+ days), click <strong>Connect to IRP</strong> above. An embedded browser will open here — log in as you normally would, and the session will be saved automatically.</p>
+          <p>The browser profile is stored at: <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{session.profileDir || '.irp-browser-profile'}</code></p>
+          <p className="text-xs text-gray-400">On Azure App Service, set <code className="rounded bg-gray-100 px-1 py-0.5">IRP_BROWSER_PROFILE=/home/irp-browser-profile</code> so the profile persists across deployments.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ImportReleaseSettingsPage() {
   const inputRefs = {
     to: useRef(null),
@@ -200,6 +414,41 @@ export default function ImportReleaseSettingsPage() {
       setTimeout(() => setToast(null), 3000);
     },
   });
+  const irpRefreshMutation = useMutation({
+    mutationFn: refreshIrpSession,
+    onSuccess: () => {
+      setToast({ type: 'success', message: 'IRP token refreshed.' });
+      setTimeout(() => setToast(null), 2500);
+      healthQuery.refetch();
+    },
+    onError: (error) => {
+      setToast({ type: 'error', message: error.message });
+      setTimeout(() => setToast(null), 3000);
+    },
+  });
+  const irpSetupStartMutation = useMutation({
+    mutationFn: startIrpSetupSession,
+    onSuccess: (data) => {
+      if (data.alreadyConnected) {
+        setToast({ type: 'success', message: 'Already connected — no login needed.' });
+        setTimeout(() => setToast(null), 2500);
+        healthQuery.refetch();
+      } else if (data.started) {
+        setActiveTab('irp');
+      } else {
+        setToast({ type: 'error', message: data.error || 'Could not start setup session.' });
+        setTimeout(() => setToast(null), 3000);
+      }
+    },
+    onError: (error) => {
+      setToast({ type: 'error', message: error.message });
+      setTimeout(() => setToast(null), 3000);
+    },
+  });
+  const irpSetupStopMutation = useMutation({
+    mutationFn: stopIrpSetupSession,
+    onSuccess: () => healthQuery.refetch(),
+  });
 
   const availableVariables = settingsQuery.data?.available_variables || [];
   const hasUnsavedChanges = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm]);
@@ -215,10 +464,10 @@ export default function ImportReleaseSettingsPage() {
   const previewSubject = renderTemplate(form.email.subject_template, previewVariables);
   const previewBody = renderTemplate(`${form.email.body_html || ''}\n{{signature_html}}`, previewVariables);
   const healthItems = [
-    { label: 'Source', ok: healthQuery.data?.sourceReachable, detail: healthQuery.data?.sourceReachable ? 'Reachable' : 'Unavailable' },
+    { label: 'Source Integration', ok: healthQuery.data?.sourceReachable, detail: healthQuery.data?.sourceDetail || (healthQuery.data?.sourceReachable ? 'Configured' : 'Missing configuration') },
     { label: 'IRP Auth', ok: healthQuery.data?.irpAuthValid, detail: healthQuery.data?.irpAuthDetail || (healthQuery.data?.irpAuthValid ? 'Connected' : (healthQuery.data?.irpAuthError || 'Invalid')) },
-    { label: 'Email', ok: healthQuery.data?.emailConfigured, detail: healthQuery.data?.emailConfigured ? 'Configured' : 'Missing' },
-    { label: 'Automation', ok: healthQuery.data?.automationRunning, detail: healthQuery.data?.fullJobRunning ? 'Running' : (healthQuery.data?.automationRunning ? 'Enabled' : 'Disabled') },
+    { label: 'Email Integration', ok: healthQuery.data?.emailConfigured, detail: healthQuery.data?.emailDetail || (healthQuery.data?.emailConfigured ? 'Configured' : 'Missing configuration') },
+    { label: 'Automation', ok: healthQuery.data?.automationRunning, detail: healthQuery.data?.automationDetail || (healthQuery.data?.fullJobRunning ? 'Running' : (healthQuery.data?.automationRunning ? 'Enabled' : 'Disabled')) },
   ];
 
   const setEmailField = (key, value) => {
@@ -282,7 +531,7 @@ export default function ImportReleaseSettingsPage() {
         {toast && (
           <div className={`rounded-md border px-4 py-3 text-sm ${toast.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>
             <div className="flex items-center gap-2">
-              <CheckCircle2 size={16} />
+              {toast.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
               <span>{toast.message}</span>
             </div>
           </div>
@@ -292,6 +541,7 @@ export default function ImportReleaseSettingsPage() {
           {[
             { key: 'builder', label: 'Notification Builder' },
             { key: 'health', label: 'System Health' },
+            { key: 'irp', label: 'IRP Connection' },
             { key: 'logs', label: 'Runtime Logs' },
           ].map((tab) => (
             <button
@@ -428,25 +678,8 @@ export default function ImportReleaseSettingsPage() {
         )}
 
         {activeTab === 'health' && (
-          <div className="rounded-lg border bg-white p-5">
-            <div className="mb-4 text-sm font-medium text-gray-800">System Health</div>
-            <div className={`mb-4 rounded-md border px-4 py-3 text-sm ${
-              healthQuery.data?.irpAuthValid
-                ? 'border-green-200 bg-green-50 text-green-800'
-                : 'border-amber-200 bg-amber-50 text-amber-800'
-            }`}>
-              <div className="flex items-start gap-2">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-medium">IRP Session</div>
-                  <div className="mt-1">
-                    {healthQuery.data?.irpAuthValid
-                      ? 'The dashboard is currently connected to IRP through the saved trusted profile session.'
-                      : 'The dashboard is not currently able to validate IRP auth. A local session refresh is required when the trusted profile is no longer accepted.'}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="rounded-lg border bg-white p-5 space-y-4">
+            <div className="text-sm font-medium text-gray-800">System Health</div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {healthItems.map((item) => (
                 <div key={item.label} className="rounded-md border border-gray-200 px-4 py-3">
@@ -455,48 +688,42 @@ export default function ImportReleaseSettingsPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              <div className="rounded-md border border-gray-200 px-4 py-3">
-                <div className="text-xs uppercase tracking-wide text-gray-500">Session Source</div>
-                <div className="mt-1 text-sm font-medium text-gray-800">
-                  {healthQuery.data?.irpCapture?.hasSessionCookieCapture
-                    ? 'Trusted local Chromium profile capture'
-                    : 'No saved local session capture found'}
-                </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  Capture file: {healthQuery.data?.irpCapture?.captureFile || 'irp.json'}
-                </div>
+            <div className="rounded-md border border-gray-200 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs uppercase tracking-wide text-gray-500">IRP Connection</div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('irp')}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-[#714B67] hover:text-[#714B67]"
+                >
+                  <Monitor size={12} />
+                  Manage
+                </button>
               </div>
-              <div className="rounded-md border border-gray-200 px-4 py-3">
-                <div className="text-xs uppercase tracking-wide text-gray-500">{healthQuery.data?.sessionWindowLabel || 'Session Window'}</div>
-                <div className="mt-1 text-sm font-medium text-gray-800">
-                  {healthQuery.data?.sessionWindowDetail || 'No token expiry available'}
+              <div className="mt-1 text-sm font-medium text-gray-800">{healthQuery.data?.irpAuthDetail || '—'}</div>
+              {healthQuery.data?.irpSession?.tokenExpiresAt && (
+                <div className="mt-1 text-xs text-gray-500">
+                  Token expires: {new Date(healthQuery.data.irpSession.tokenExpiresAt).toLocaleString()}
                 </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  {healthQuery.data?.irpCapture?.tokenNearExpiry
-                    ? 'Refresh the local session soon to avoid interruption.'
-                    : (healthQuery.data?.irpCapture?.hasSessionCookieCapture
-                      ? 'Runtime checks can stay valid beyond the last captured bearer timestamp while the trusted browser session remains accepted.'
-                      : 'Session window is currently acceptable.')}
-                </div>
-              </div>
+              )}
             </div>
-            <div className="mt-4 rounded-md border border-gray-200 px-4 py-3">
+            <div className="rounded-md border border-gray-200 px-4 py-3">
               <div className="text-xs uppercase tracking-wide text-gray-500">Last Full Run</div>
-              <div className="mt-1 text-sm font-medium text-gray-800">{healthQuery.data?.lastFullRunAt ? new Date(healthQuery.data.lastFullRunAt).toLocaleString() : 'No run yet'}</div>
-            </div>
-            <div className="mt-4 rounded-md border border-gray-200 px-4 py-3">
-              <div className="text-xs uppercase tracking-wide text-gray-500">Local Refresh Procedure</div>
-              <ol className="mt-2 space-y-2 text-sm text-gray-700">
-                {(healthQuery.data?.localRefreshProcedure || []).map((step, index) => (
-                  <li key={step} className="flex gap-3">
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-700">{index + 1}</span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
+              <div className="mt-1 text-sm font-medium text-gray-800">
+                {healthQuery.data?.lastFullRunAt ? new Date(healthQuery.data.lastFullRunAt).toLocaleString() : 'No run yet'}
+              </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'irp' && (
+          <IrpConnectionTab
+            health={healthQuery.data}
+            onRefreshHealth={healthQuery.refetch}
+            irpRefreshMutation={irpRefreshMutation}
+            irpSetupStartMutation={irpSetupStartMutation}
+            irpSetupStopMutation={irpSetupStopMutation}
+          />
         )}
 
         {activeTab === 'logs' && (
@@ -522,12 +749,16 @@ export default function ImportReleaseSettingsPage() {
                       <td className="px-4 py-3 font-medium uppercase">{run.type}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">{run.startedAt ? new Date(run.startedAt).toLocaleString() : '-'}</td>
                       <td className="px-4 py-3 text-xs text-gray-600">{run.sourceFetched != null ? `Fetched ${run.sourceFetched}, inserted ${run.sourceInserted || 0}, updated ${run.sourceUpdated || 0}` : (run.sourceError || '-')}</td>
-                      <td className="px-4 py-3 text-xs text-gray-600">{run.irpChecked != null ? `${run.irpChecked} checked` : '-'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {run.irpChecked != null
+                          ? `${run.irpChecked} attempted, ${run.irpCompleted || 0} completed, ${run.irpErrors || 0} failed`
+                          : '-'}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-600">{run.emailsSent != null ? `${run.emailsSent} sent, ${run.emailErrors || 0} failed` : '-'}</td>
                       <td className="px-4 py-3">
                         {run.skipped
                           ? <span className="inline-flex rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">{run.reason || 'Skipped'}</span>
-                          : <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${run.sourceError ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{run.sourceError ? 'Issue' : 'Completed'}</span>}
+                          : <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${run.status === 'issue' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{run.status === 'issue' ? 'Issue' : 'Completed'}</span>}
                       </td>
                     </tr>
                   ))}

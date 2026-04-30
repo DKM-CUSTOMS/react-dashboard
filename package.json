@@ -10,7 +10,8 @@
         "build": "vite build",
         "lint": "eslint .",
         "preview": "vite preview",
-        "irp:auth": "node scripts/refresh-irp-session.mjs"
+        "irp:auth": "node scripts/refresh-irp-session.mjs",
+        "irp:probe": "node scripts/probe-irp-tsd.mjs"
     },
     "dependencies": {
         "@azure/storage-blob": "^12.31.0",

@@ -1,14 +1,25 @@
 ﻿import fs from 'fs/promises';
 import path from 'path';
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
 
-const ROOT = process.cwd();
-const PROFILE_DIR = process.env.IRP_BROWSER_PROFILE || path.join(ROOT, '.irp-browser-profile');
-const OUTPUT_FILE = process.env.IRP_CAPTURE_FILE || path.join(ROOT, 'irp.json');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, '..');
+const resolveProjectPath = (value, fallbackName) => {
+  const target = String(value || fallbackName || '').trim();
+  if (!target) return '';
+  return path.isAbsolute(target) ? target : path.join(ROOT, target);
+};
+const PROFILE_DIR = resolveProjectPath(process.env.IRP_BROWSER_PROFILE, '.irp-browser-profile');
+const OUTPUT_FILE = resolveProjectPath(process.env.IRP_CAPTURE_FILE, 'irp.json');
 const HEADLESS = process.env.IRP_HEADLESS === '1';
 const LOGIN_URL = process.env.IRP_LOGIN_URL || 'https://irp.nxtport.com/search';
 const KEEP_OPEN_MS = Number(process.env.IRP_CAPTURE_WINDOW_MS || 180000);
-const REFRESH_BEFORE_MS = Number(process.env.IRP_REFRESH_BEFORE_MS || 15 * 60 * 1000);
+// Uses the same env var as the service (IRP_TOKEN_REFRESH_BEFORE_MS) so both share one config.
+// Default kept lower here (15 min) because the script asks "is this token fresh enough to skip
+// a full browser refresh?" — a tighter window than the service's in-process token cache check.
+const REFRESH_BEFORE_MS = Number(process.env.IRP_TOKEN_REFRESH_BEFORE_MS || 15 * 60 * 1000);
 const FORCE_REFRESH = process.env.IRP_FORCE_REFRESH === '1';
 
 const captures = new Map();
@@ -89,7 +100,22 @@ function cookieHeader(cookies) {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 }
 
-async function writeCapture(context) {
+async function exchangeSessionCookieForToken(sessionCookie) {
+  const response = await fetch('https://irp.nxtport.com/api/auth/session', {
+    headers: {
+      Accept: 'application/json',
+      Cookie: sessionCookie,
+      'User-Agent': 'Mozilla/5.0',
+      Referer: 'https://irp.nxtport.com/search',
+    },
+  });
+  if (!response.ok) throw new Error(`IRP session returned HTTP ${response.status}`);
+  const data = await response.json();
+  if (!data.idToken) throw new Error('IRP session did not return an idToken');
+  return data.idToken;
+}
+
+async function captureContextAuth(context) {
   const cookies = await context.cookies(['https://irp.nxtport.com', 'https://api.irp.nxtport.com']);
   const sessionCookie = cookieHeader(cookies.filter((cookie) =>
     ['ASLBSA', 'ASLBSACORS'].includes(cookie.name) || cookie.name.includes('next-auth')
@@ -102,6 +128,27 @@ async function writeCapture(context) {
       source: 'playwright-persistent-profile',
     });
   }
+
+  if (!sessionCookie) {
+    return { refreshedBearer: false, error: 'No IRP session cookies found in the trusted profile.' };
+  }
+
+  try {
+    const idToken = await exchangeSessionCookieForToken(sessionCookie);
+    upsertCapture('bearer', {
+      'Request URL': 'https://api.irp.nxtport.com/irp-bff/v1/account',
+      cookie: `Bearer ${idToken}`,
+      origin: 'https://irp.nxtport.com',
+      source: 'playwright-session-exchange',
+    });
+    return { refreshedBearer: true };
+  } catch (error) {
+    return { refreshedBearer: false, error: error.message };
+  }
+}
+
+async function writeCapture(context) {
+  await captureContextAuth(context);
 
   const data = [...captures.values()];
   await fs.writeFile(OUTPUT_FILE, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
@@ -125,7 +172,16 @@ async function main() {
   }
 
   for (const entry of existing) {
-    const key = String(entry?.cookie || '').startsWith('Bearer ') ? 'bearer' : String(entry.source || entry['Request URL'] || Math.random());
+    let key;
+    if (String(entry?.cookie || '').startsWith('Bearer ')) {
+      key = 'bearer';
+    } else if (typeof entry.cookie === 'string' && entry.cookie.includes('next-auth')) {
+      // Normalise all session entries to the same key so old session entries are replaced,
+      // not accumulated. Previously these were keyed by their 'source' string.
+      key = 'session';
+    } else {
+      key = String(entry.source || entry['Request URL'] || Math.random());
+    }
     captures.set(key, entry);
   }
 
@@ -160,6 +216,13 @@ async function main() {
 
   const page = context.pages()[0] || await context.newPage();
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+  const immediateCapture = await captureContextAuth(context);
+  if (immediateCapture.refreshedBearer) {
+    await writeCapture(context);
+    console.log('[irp-auth] Refreshed IRP bearer token from the trusted browser session.');
+  } else if (immediateCapture.error) {
+    console.log(`[irp-auth] Trusted session did not immediately yield an idToken: ${immediateCapture.error}`);
+  }
 
   console.log(`[irp-auth] Browser open for ${Math.round(KEEP_OPEN_MS / 1000)}s to capture IRP auth traffic.`);
   console.log('[irp-auth] Open/search IRP normally if the capture is not written immediately.');
